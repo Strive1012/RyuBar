@@ -1646,6 +1646,17 @@ public sealed class SettingsWindowTheme : Window
         Group("高级");
         Note($"网易云位置偏移：{(string.IsNullOrEmpty(_store.Current.Readers.NetEasePositionOffset) ? "（自动标定，尚未写入）" : _store.Current.Readers.NetEasePositionOffset)} —— 内存扫描自动标定出来的值，正常无需改动。");
         Group("关于");
+        // ★ 版本号：从**程序集**读 ✗ 不在界面里写死 ✓
+        //   这样以后只改 RyuBar.csproj 的 <Version> ⇒ 这里自动跟着变 ✓
+        //   不会出现"文档一个版本、程序里另一个版本"（历史上就出现过：CHANGELOG 到 0.8.40 而代码一直是 0.1.0 ✗）
+        _pageHost.Children.Add(new TextBlock
+        {
+            Text = $"RyuBar {ReadAppVersion()}",
+            FontSize = 16,
+            FontWeight = FontWeights.SemiBold,
+            Margin = new Thickness(0, 2, 0, 3),
+        });
+        Note($"构建 {ReadAppInformationalVersion()}");
         Note("RyuBar 设置 · 与媒体条同一个进程；点右上角关闭只是关掉本窗口，媒体条继续常驻。");
 
         Button quit = new()
@@ -1666,5 +1677,41 @@ public sealed class SettingsWindowTheme : Window
             }
         };
         _pageHost.Children.Add(quit);
+    }
+
+    /// <summary>
+    /// 读应用版本号（形如 `0.8.40` ✓ 段数取 3 ⇒ 与 `RyuBar.csproj` 的 &lt;Version&gt; 写法一致 ✓）。
+    /// 从程序集读而不是写死 ✓ 保证界面与构建产物永远同源 ✓
+    /// </summary>
+    private static string ReadAppVersion()
+    {
+        try
+        {
+            Version? version = System.Reflection.Assembly.GetExecutingAssembly().GetName().Version;
+            return version is null ? "未知" : version.ToString(3);
+        }
+        catch
+        {
+            return "未知";
+        }
+    }
+
+    /// <summary>读信息性版本（含 git 提交哈希 ✓ 形如 `0.8.41+24049ca…` ✓；取不到就退回版本号）。</summary>
+    private static string ReadAppInformationalVersion()
+    {
+        try
+        {
+            System.Reflection.Assembly assembly = System.Reflection.Assembly.GetExecutingAssembly();
+            // 用 Attribute.GetCustomAttribute ✗ 不用扩展方法 GetCustomAttribute<T> ✓
+            // （后者要求文件头部有 using System.Reflection ✓ 而这里只有一个调用点 ✓ 不值得为它牵动 using ✓）
+            object? attribute = Attribute.GetCustomAttribute(
+                assembly, typeof(System.Reflection.AssemblyInformationalVersionAttribute));
+            string? info = (attribute as System.Reflection.AssemblyInformationalVersionAttribute)?.InformationalVersion;
+            return string.IsNullOrWhiteSpace(info) ? ReadAppVersion() : info;
+        }
+        catch
+        {
+            return ReadAppVersion();
+        }
     }
 }

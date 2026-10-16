@@ -17,7 +17,7 @@
     <AssemblyTitle>RyuBar</AssemblyTitle>
     <Product>RyuBar</Product>
     <Description>Windows 10/11 任务栏媒体条与歌词（自研实现）</Description>
-    <Version>0.8.40</Version>
+    <Version>0.8.41</Version>
     <Copyright>Copyright (c) 2026 RyuBar</Copyright>
   </PropertyGroup>
 

@@ -1,5 +1,37 @@
 # RyuBar 变更日志
 
+## [0.8.41] — 设置里显示应用版本号
+
+用户："在设置中加上应用版本号" ✓
+
+### 改动
+
+```
+设置窗口「应用」页 →「关于」分组
+  · 新增一行醒目的版本号：RyuBar 0.8.41
+  · 新增一行构建信息：0.8.41+<git 提交哈希>（由 MSBuild 自动写入 ✓）
+```
+
+### 关键：版本号从**程序集**读，不在界面里写死
+
+```csharp
+Version? version = Assembly.GetExecutingAssembly().GetName().Version;
+return version is null ? "未知" : version.ToString(3);   // → "0.8.41"
+```
+
+为什么必须这样：**这个项目历史上就出现过版本号不同源** ✗
+CHANGELOG 已经写到 0.8.40，而代码里的 `<Version>` 从建项目起一直是脚手架默认的 **0.1.0**，
+启动日志一直打 "RyuBar 0.1.0" —— 文档一个版本、程序另一个版本 ✓
+从程序集读 ⇒ 以后只要改 `RyuBar.csproj` 的 `<Version>`，界面与日志**自动同源** ✓
+
+### 版本号同步了三处
+
+```
+src/RyuBar.csproj      <Version>0.8.41</Version>
+src/App.xaml.cs        const string Version = "0.8.41"
+src/App.xaml.cs        --help 文本里的版本号
+```
+
 ## [更正] 版本号改回 0.8.40（用户指出：应该用之前的版本号）
 
 用户："项目一直是有版本号的吗，我不知道，如果有的话用之前的版本号"
