@@ -17,3 +17,5 @@ src.backup-*/
 # ── Windows 杂项 ──
 Thumbs.db
 desktop.ini
+# 源码目录里不该有 CHANGELOG（仓库根的那份才是正式的；复制备份时容易误带入）
+src/CHANGELOG.md
