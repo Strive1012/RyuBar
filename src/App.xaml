@@ -1,0 +1,19 @@
+<Application x:Class="RyuBar.App"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             ThemeMode="System"
+             ShutdownMode="OnExplicitShutdown">
+    <!--
+      没有 StartupUri：窗口与生命周期全部由 App.OnStartup 控制。
+
+      ThemeMode="System" 就是 .NET 9+ 的**第一方 Fluent 主题**：标准控件自动 Fluent，
+      并跟随系统明暗；强调色用 SystemColors.AccentColor 直接取（第一方，无需第三方库）。
+
+      这里**不再挂任何第三方资源字典** —— 之前挂 WPF-UI 的两本字典会和自带主题打架：
+      它的 Window 样式与自带主题的 ThemeManager.ApplyStyleOnWindow 都想设 AllowsTransparency，
+      结果打开设置窗口时抛 InvalidOperationException（实测踩过）。
+    -->
+    <Application.Resources>
+        <ResourceDictionary />
+    </Application.Resources>
+</Application>

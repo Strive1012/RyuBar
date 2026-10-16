@@ -1,0 +1,19 @@
+# ── 构建产物（可重新生成 ✗ 不入库）──
+bin/
+obj/
+dist/
+*.pdb
+
+# ── 源码回滚备份（体积大 ✓ 需要时手工恢复 ✓ 不入库）──
+src.backup-*/
+
+# ── 编辑器 / IDE ──
+.vs/
+.idea/
+*.user
+*.suo
+*.cache
+
+# ── Windows 杂项 ──
+Thumbs.db
+desktop.ini

@@ -1,0 +1,32 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <!-- 目标框架只决定编译期 API 面；运行下限由 app.manifest 声明为 Windows 10 1809。
+         取 19041 是为了拿到任务栏/DWM 相关接口的较新 SDK 投影。 -->
+    <TargetFramework>net10.0-windows10.0.19041.0</TargetFramework>
+    <UseWPF>true</UseWPF>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+    <ApplicationManifest>app.manifest</ApplicationManifest>
+    <ApplicationIcon>..\assets\ryubar.ico</ApplicationIcon>
+
+    <AssemblyName>RyuBar</AssemblyName>
+    <RootNamespace>RyuBar</RootNamespace>
+    <AssemblyTitle>RyuBar</AssemblyTitle>
+    <Product>RyuBar</Product>
+    <Description>Windows 10/11 任务栏媒体条与歌词（自研实现）</Description>
+    <Version>0.1.0</Version>
+    <Copyright>Copyright (c) 2026 RyuBar</Copyright>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!-- 架构底座：唯一组合根 + 源生成器 MVVM；界面组件库留到外观阶段使用。 -->
+    <PackageReference Include="Lyricify.Lyrics.Helper" Version="0.2.0" />
+    <PackageReference Include="Microsoft.Extensions.Hosting" Version="10.0.1" />
+    <PackageReference Include="CommunityToolkit.Mvvm" Version="8.4.0" />
+    <PackageReference Include="NAudio" Version="2.2.1" />
+  </ItemGroup>
+
+</Project>

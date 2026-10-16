@@ -1,0 +1,24 @@
+<Window x:Class="RyuBar.Taskbar.TaskbarBarWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:components="clr-namespace:RyuBar.Components"
+        Title="RyuBar"
+        Width="2560"
+        Height="72"
+        WindowStyle="None"
+        AllowsTransparency="True"
+        Background="Transparent"
+        ShowInTaskbar="False"
+        ShowActivated="False"
+        ResizeMode="NoResize"
+        WindowStartupLocation="Manual"
+        SnapsToDevicePixels="True"
+        TextOptions.TextFormattingMode="Display">
+
+    <!-- 窗口就是条本身：分层表面越小，每帧透明度更新越便宜；
+         圆角外的透明像素又天然是点击穿透，于是连 SetWindowRgn 都不需要。
+         内容由 BarView 自绘（宽度按内容自适应）。 -->
+    <Grid x:Name="HostRoot">
+        <components:BarView x:Name="Bar" />
+    </Grid>
+</Window>
