@@ -106,6 +106,12 @@ public sealed class BarView : FrameworkElement
     /// <summary>换句滚动过渡的起始时刻（default = 不滚动）。</summary>
     private DateTime _lyricsRollAt;
 
+    /// <summary>
+    /// 诊断：`RYUBAR_FRAME_TRACE=1` → **每帧**输出歌词/宽度的关键量（查"换句抖动"用 ✓ 平时不输出 ✗）。
+    /// 为什么需要它：抖是**帧级**现象 ✗ 截图与抽样日志都抓不到 ✓ 只能逐帧看数值序列 ✓
+    /// </summary>
+    private static readonly bool FrameTrace = Environment.GetEnvironmentVariable("RYUBAR_FRAME_TRACE") == "1";
+
     /// <summary>歌词自然宽度缓存（每帧重测会掉帧 ✗ 见 ComputeLayout 里的说明）。</summary>
     private double _lyricsNeedWidth;
 
@@ -113,6 +119,15 @@ public sealed class BarView : FrameworkElement
 
     /// <summary>上一句的文本：用来判断"两句都非空"才允许滚动（避免没歌词时反复往上跳 ✓）。</summary>
     private string _lyricsPreviousText = "";
+
+    /// <summary>
+    /// 换句前的那一整行（roll 过渡期间"正在退出"的行 ✓）。
+    /// ★ 为什么需要它（用户录屏实测的"闪掉一拍"）：
+    ///   换句瞬间 `_lyrics.Current` 会短暂为空 ✗ ⇒ `DrawLyrics` 直接返回 false ⇒ **整块不画**
+    ///   ⇒ 视觉上连续 **8 帧（约 67ms）完全空白** ✗ 看起来就是"抖/闪一下" ✓
+    ///   所以在这里存住旧行 ✓ 当前行短暂为空时拿它兜底 ✓ 画面就不会闪 ✗
+    /// </summary>
+    private LyricsLineView? _lyricsRollFromLine;
 
     /// <summary>标题/歌手/时间的排版缓存 + 缓存键（每帧重建会掉帧 ✗ 见 ComputeLayout 说明）。</summary>
     private FormattedText? _cachedTitleText;
@@ -456,7 +471,12 @@ public sealed class BarView : FrameworkElement
     /// <summary>设置歌词显示数据（null = 没有歌词，回落到标题/歌手）。</summary>
     public void SetLyrics(LyricsView? view)
     {
+        // ★ 必须在替换 **_lyrics 之前**取旧行 ✗
+        //   原来 `_lyricsPreviousText = text` 写在 `_lyrics = view` 之后 ⇒ 存的是**新句** ✗
+        //   ⇒ 换句瞬间 Current 短暂为空时无旧行可用 ⇒ 整块不画 ⇒ 闪掉一拍（用户录屏实测 8 帧全空 ✓）
+        LyricsLineView? oldCurrent = _lyrics?.Current;
         string text = view?.Current?.Text ?? "";
+        string oldText = oldCurrent?.Text ?? "";
         bool lineChanged = !string.Equals(text, _lyrics?.Current?.Text, StringComparison.Ordinal);
         _lyrics = view;
         // ★ 只有"旧句与新句都真的有内容"时才启动滚动 ✓
@@ -469,6 +489,7 @@ public sealed class BarView : FrameworkElement
             _marqueeAnchor = DateTime.Now;   // 换行：跑马灯从头开始
             if (bothHaveText)
             {
+                _lyricsRollFromLine = oldCurrent;   // ★ 记住"正在退出的那一行"✓ 供兜底 ✓
                 _lyricsRollAt = DateTime.Now;   // 换行：启动"向上滚动一行"的过渡（用户要求 ✓）
             }
             Measure(Size.Empty);
@@ -520,14 +541,49 @@ public sealed class BarView : FrameworkElement
     public void SetForcedWidthDip(int dip)
     {
         int clamped = dip <= 0 ? 0 : Math.Clamp(dip, 120, 900);
+
+        // ★ 动画结束时会调到这里（宿主把宽度还给"本该有的值"）⇒ 在这里收工 ✓
+        //   必须在**早退之前**置位 ✗ 否则 clamped 正好等于旧值时就直接 return ✗
+        //   ⇒ `_widthAnimating` 会永远停在 true ⇒ 之后每一帧都不再设 MaxTextWidth
+        //     ⇒ 文本裁剪宽度永远停住 ✗（长句再也不省略/滚动 ✗）
+        bool leavingAnimation = _widthAnimating;
+        _widthAnimating = false;
+
         if (clamped == _forcedWidthDip)
         {
+            if (leavingAnimation)
+            {
+                InvalidateVisual();   // 补上动画期间被跳过的 MaxTextWidth ✓
+            }
             return;
         }
 
         _forcedWidthDip = clamped;
         Measure(Size.Empty);
         InvalidateMeasure();
+        InvalidateVisual();
+    }
+
+    /// <summary>
+    /// **宽度动画帧专用**：只标脏、**不做同步测量** ✗
+    ///
+    /// 为什么单独给一个（用户要求"动画达到 60 帧"）：
+    ///   同步 `Measure(Size.Empty)` 每帧要多花 ~8ms ✗ —— 它会把帧间隔顶到 ~24ms（≈42fps）✗
+    ///   而动画期间宿主**不需要** `Bar.BarWidth`：
+    ///     · 它算目标宽度用的是**动画目标值**（`_widthAnimTo`）✗ 不是这个属性 ✓
+    ///     · 所以"同步测量"纯属白费 ✓
+    ///   `InvalidateMeasure` 只标脏 ✓ 下一次布局 pass 会自己重测 ✓ 结果一致 ✓
+    /// </summary>
+    public void SetAnimationWidthDip(int dip)
+    {
+        int clamped = dip <= 0 ? 0 : Math.Clamp(dip, 120, 900);
+        if (clamped == _forcedWidthDip)
+        {
+            return;
+        }
+
+        _forcedWidthDip = clamped;
+        _widthAnimating = true;   // 让 OnRender 跳过 MaxTextWidth（避免每帧重排文本 ✓）
         InvalidateVisual();
     }
 
@@ -575,6 +631,13 @@ public sealed class BarView : FrameworkElement
 
     /// <summary>歌词宽度自动适配（默认开）。关 = 用 _lyricsWidthDip 当**固定**宽度。</summary>
     private bool _lyricsAutoFit = true;
+
+    /// <summary>
+    /// 宽度**动画**进行中（用户要求"达到 60 帧"时加的 ✓）。
+    /// 作用：让 `OnRender` **跳过** `MaxTextWidth` 的设置 ✗
+    /// —— 那个 setter 会让 `FormattedText` 重新整形 ✓ 每帧一次就是 ~24ms ⇒ 只能到 40fps ✗
+    /// </summary>
+    private bool _widthAnimating;
 
     /// <summary>自动适配模式的宽度上限（DIP，≤0 = 还没测到空档）。由宿主按任务栏空档写入，见 SetAutoFitWidthCapDip。</summary>
     private int _autoFitCapDip;
@@ -1081,8 +1144,11 @@ public sealed class BarView : FrameworkElement
         //   原因：`FormattedText.MaxTextWidth` 的 setter 会让文本**重新整形**（重新决定换行与裁剪）✗
         //   而动画每一帧都要走这里 ⇒ 每帧重排一次文本 ⇒ 帧间隔 ~24ms（≈40fps）✗ 达不到 60fps ✗
         //   代价：动画期间文字的裁剪宽度停在上一次的值 ✓ 220ms 内看不出来 ✓ 动画一结束立刻恢复 ✓
-        layout.Title.MaxTextWidth = textWidth;
-        layout.Artist.MaxTextWidth = textWidth;
+        if (!_widthAnimating)
+        {
+            layout.Title.MaxTextWidth = textWidth;
+            layout.Artist.MaxTextWidth = textWidth;
+        }
 
         // 有歌词就画歌词（当前行 + 下一句），否则画标题/歌手
         // ★ 换句时**向上滚动一行**（用户："改成向下滚动来切换到下句歌词，这样看着也更合理" ✓）
@@ -1100,6 +1166,14 @@ public sealed class BarView : FrameworkElement
             rollOffset = layout.Title.Height * 1.15 * (1 - eased);   // 行高按标题行高估 ✓
             IsKaraokeActive = true;                            // 滚动期间必须有 60fps 重绘驱动 ✓
             dc.PushTransform(new TranslateTransform(0, rollOffset));
+        }
+
+        if (FrameTrace)
+        {
+            Diagnostics.Log.Write("frame",
+                $"roll={roll:0.000} offset={rollOffset:0.0} rolling={(rolling ? 1 : 0)} " +
+                $"textW={layout.TextWidth:0.0} animW={_forcedWidthDip} animating={(_widthAnimating ? 1 : 0)} " +
+                $"x={x:0.0} cw={w:0.0} barW={BarWidth:0.0}");
         }
 
         if (DrawLyrics(dc, x, cy, h, textWidth))
@@ -1460,12 +1534,33 @@ public sealed class BarView : FrameworkElement
         IsMarqueeActive = false;
         IsKaraokeActive = false;
         LyricsView? lyrics = _lyrics;
-        if (lyrics?.Current is not { } current || string.IsNullOrWhiteSpace(current.Text))
+
+        // ★ 换句瞬间 `Current` 会短暂为空 ✗ ⇒ 原来直接 return false ⇒ **整块不画** ⇒ 闪掉一拍 ✓
+        //   （用户录屏逐帧量化：连续 8 帧全空 ≈ 67ms ✓）
+        //   兜底：正在 roll 且有"退出的旧行" ⇒ 先继续显示旧行 ✓ 等新行到达再滚 ✓
+        LyricsLineView? currentLine = lyrics?.Current;
+        LyricsLineView? nextLine = lyrics?.Next;
+        if (IsLyricsRolling
+            && _lyricsRollFromLine is { } rollFrom
+            && (currentLine is null || string.IsNullOrWhiteSpace(currentLine.Text)))
         {
+            currentLine = rollFrom;
+            nextLine = null;
+        }
+
+        if (currentLine is null || string.IsNullOrWhiteSpace(currentLine.Text))
+        {
+            if (FrameTrace)
+            {
+                Diagnostics.Log.Write("frame",
+                    $"DrawLyrics=false 当前行空 rolling={(IsLyricsRolling ? 1 : 0)} " +
+                    $"有旧行兜底={(_lyricsRollFromLine is not null ? 1 : 0)} " +
+                    $"lyricsNull={(lyrics is null ? 1 : 0)}");
+            }
             return false;
         }
 
-        bool twoLines = _lyricsLines >= 2 && lyrics.Next is { } next && !string.IsNullOrWhiteSpace(next.Text);
+        bool twoLines = _lyricsLines >= 2 && nextLine is not null && !string.IsNullOrWhiteSpace(nextLine.Text);
         double currentSize = _titleSize;
         double currentHeight = currentSize * 1.32;
         double nextSize = _artistSize;
@@ -1474,14 +1569,14 @@ public sealed class BarView : FrameworkElement
         if (twoLines && currentHeight + nextHeight <= h - 2)
         {
             double top = cy - (currentHeight + nextHeight) / 2;
-            DrawCachedLyricLine(dc, _cacheCurrent, current, x, top, available, currentSize,
+            DrawCachedLyricLine(dc, _cacheCurrent, currentLine, x, top, available, currentSize,
                 FontWeights.SemiBold, perWordAllowed: true, BrushFromColor(_lyricsTextColor, TitleBrush));
-            DrawCachedLyricLine(dc, _cacheNext, lyrics.Next!, x, top + currentHeight, available, nextSize,
+            DrawCachedLyricLine(dc, _cacheNext, nextLine!, x, top + currentHeight, available, nextSize,
                 FontWeights.Normal, perWordAllowed: false, BrushFromColor(_lyricsNextLineColor, ArtistBrush));
         }
         else
         {
-            DrawCachedLyricLine(dc, _cacheCurrent, current, x, cy - currentHeight / 2, available, currentSize,
+            DrawCachedLyricLine(dc, _cacheCurrent, currentLine, x, cy - currentHeight / 2, available, currentSize,
                 FontWeights.SemiBold, perWordAllowed: true, BrushFromColor(_lyricsTextColor, TitleBrush));
         }
         return true;

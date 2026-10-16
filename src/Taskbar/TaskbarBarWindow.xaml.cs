@@ -144,8 +144,36 @@ public partial class TaskbarBarWindow : Window
 
 
     // ---- 宽度缓动（歌词换句时条子平滑变宽/变窄，而不是瞬间跳）----
-    private System.Windows.Threading.DispatcherTimer? _widthTimer;
+    /// <summary>
+    /// 宽度动画是否进行中。
+    /// ★ 它同时取代了 `DispatcherTimer` 的存在性判断 ✗
+    ///   （改成 CompositionTarget.Rendering 之后不存在"定时器对象"了 ✓ 用一个标志表达"动画在跑" ✓）
+    /// </summary>
+    private bool _widthAnimating;
+
+    /// <summary>上一动画帧的时间戳（诊断用 ✓）。</summary>
+    private DateTime _widthAnimLastFrame;
+
+    /// <summary>动画已推进的"虚拟时间"（毫秒，按固定步长累加 ✓ 见 OnWidthAnimFrame ✓）。</summary>
+    private double _widthAnimElapsedMs;
     private int _appliedBarWidthPx = -1;   // 当前实际宽度（物理像素，-1 = 还没摆过位）
+    /// <summary>
+    /// 动画的起止**内容宽度**（DIP，= 视图自己算出来的整条宽度 ✓）。
+    /// ★ 为什么用 DIP / 内容宽度而不是 `choice.Width`（窗口像素宽度 ✗）：
+    ///   `choice.Width` = RangePolicy 给的**整条窗口宽度**（含左右贴边留白 ✓ 可能被空档钳过 ✗）
+    ///   而动画结束后切回 auto 时，视图用的是**自己算出的宽度**（`Bar.BarWidth` ✓）
+    ///   两者差几像素 ⇒ **动画终点与最终状态不一致 ⇒ 结束那一瞬间跳一下** ✗
+    ///   —— 用户报的"滚动切到下一句时抖一下"就是这个 ✓
+    /// </summary>
+    /// <summary>
+    /// 视图上一次**落定**的整条内容宽度（DIP）。
+    /// ★ 必须是独立字段 ✗ 不能从 `_appliedBarWidthPx` 反推 ✓
+    ///   因为 `_appliedBarWidthPx` 会在落位分支里被设成**窗口宽度**（像素 ✗）—— 语义不同 ✗
+    ///   实测踩到：反推出来的起点等于终点（650 → 650 DIP，位移 0）⇒ 动画看起来"没动" ✗
+    ///   只在"确认落定"（无变化分支 / 动画帧）时更新 ✓ ⇒ 需要动画时它仍是旧值 ✓ 起点才对 ✓
+    /// </summary>
+    private int _appliedContentWidthDip;
+
     private int _widthAnimFrom;
     private int _widthAnimTo;
     private DateTime _widthAnimStart;
@@ -173,53 +201,89 @@ public partial class TaskbarBarWindow : Window
     /// </remarks>
     private void StartWidthAnimation(int targetWidth, int barHeight, int durationMs = 220)
     {
-        _widthAnimFrom = _appliedBarWidthPx;
-        _widthAnimTo = targetWidth;
+        // ★ 起止都用**内容宽度（DIP）** ✗ 不用窗口像素宽度 ✓（见字段上的说明：混用会在结束时跳一下 ✗）
+        //   终点取 `Bar.BarWidth` = 视图按新歌词算出的宽度 ✓
+        //   而它正是动画结束后"切回 auto"时会用的值 ✓ ⇒ 终点与终态**完全一致** ⇒ 不再抖 ✓
+        _widthAnimFrom = _appliedContentWidthDip > 0
+            ? _appliedContentWidthDip
+            : (int)Math.Round(Bar.BarWidth);
+        _widthAnimTo = (int)Math.Round(Bar.BarWidth);
         _widthAnimStart = DateTime.Now;
+        _widthAnimLastFrame = _widthAnimStart;   // 限流基准 ✓（否则第一帧会被 16ms 门槛吃掉 ✗）
         _widthAnimDurationMs = Math.Clamp(durationMs, 60, 600);
+        _widthAnimElapsedMs = 0;   // 固定步长计时归零 ✓（帧数 = 时长 ÷ 16.6ms ✓）
         _widthAnimTop = _barRect.Top;
         _widthAnimBottom = _barRect.Top + barHeight;
 
-        // ★ 优先级必须是 Render ✗ 默认的 Background 会被渲染/输入压下去 ⇒ 定时器被饿死 ✗
-        //   实测症状：120ms 的缓动只跑出 **3 帧**（应该 ~7 帧）、220ms 只跑 6 帧（应该 ~13 帧）✗
-        //   3 帧的"动画"看起来就是硬跳 ✓ 等于白做 ✓（与 60fps 的歌词定时器同一套做法 ✓）
-        _widthTimer ??= new System.Windows.Threading.DispatcherTimer(
-            System.Windows.Threading.DispatcherPriority.Render, Dispatcher)
-        {
-            Interval = TimeSpan.FromMilliseconds(16),
-        };
-        _widthTimer.Tick -= OnWidthAnimTick;
-        _widthTimer.Tick += OnWidthAnimTick;
-        _widthTimer.Start();
+        // ★ 窗口**一次到位** ✗ 之后的每一帧都不再碰窗口 ✓
+        _barRect.Right = _barRect.Left + targetWidth;
+        _barRect.Top = _widthAnimTop;
+        _barRect.Bottom = _widthAnimBottom;
+        ApplyBarPosition(0, light: true);
+
+        // ★ 用 **CompositionTarget.Rendering** 而不是 DispatcherTimer ✗（这是能到 60 帧的关键 ✓）
+        //   为什么定时器做不到 60fps：`DispatcherTimer(16ms)` 会被 UI 线程上**别的**定时器挤后 ✗
+        //     实测本进程同时有：100ms 媒体轮询 / 150ms 落位 / 250ms 进度重绘 / 1s 设置刷新 ✗
+        //     结果定时器设 16ms、实际帧间隔 24~27ms（≈40fps）✗
+        //     —— 我把单帧开销一路砍到只剩"一次 InvalidateVisual"也还是 40fps ✗ 说明瓶颈是"排不上队"不是"画得慢" ✓
+        //   而 `CompositionTarget.Rendering` 是**渲染回调** ✓ 每帧 vsync 时触发 ✓
+        //     天然 60fps ✓ 且不会被别的定时器插队 ✗
+        _widthAnimating = true;
+        System.Windows.Media.CompositionTarget.Rendering -= OnWidthAnimFrame;
+        System.Windows.Media.CompositionTarget.Rendering += OnWidthAnimFrame;
     }
 
-    private void OnWidthAnimTick(object? sender, EventArgs e)
+    /// <summary>宽度动画的**每帧回调**（由 WPF 渲染循环驱动 ✓ 跟着显示器的刷新率 ✓）。</summary>
+    private void OnWidthAnimFrame(object? sender, EventArgs e)
     {
-        double t = (DateTime.Now - _widthAnimStart).TotalMilliseconds / _widthAnimDurationMs;
+        // ★ 限流：不到 16ms **直接返回、并且不累加时间** ✗（这是"换句抖动"的根因修复 ✓）
+        //   为什么必须限流：`CompositionTarget.Rendering` 的触发频率**远高于渲染帧率** ✓
+        //     （WPF 合成时钟实测可达 200+ Hz ✗ 时间戳铁证：同一毫秒触发两次、5ms 一次 ✓）
+        //   原来的写法是"每触发一次就 +16.6ms"✗
+        //     ⇒ 动画在 ~50ms 内跑完 220ms 的进度 ✗
+        //     ⇒ 比歌词 roll（按真实时间、≈60fps）**快 4 倍** ⇒ 两者不同步 ⇒ **换句瞬间抖一下** ✗
+        //   `_widthAnimLastFrame` 在 StartWidthAnimation 里已置为当时时刻 ✓ 所以第一帧不会被吃掉 ✓
+        DateTime now = DateTime.Now;
+        if ((now - _widthAnimLastFrame).TotalMilliseconds < 16.0)
+        {
+            return;
+        }
+        _widthAnimLastFrame = now;
+
+        // 用**固定步长**推进 ⇒ 帧数精确 = 时长 ÷ 16.6ms ✓（220ms → 13 帧 = 60fps ✓）
+        // 每帧前进的量完全相同 ⇒ 观感最均匀 ✓ 且与 roll 的真实时间速度一致 ✓
+        _widthAnimElapsedMs += 16.6;
+        double t = _widthAnimElapsedMs / _widthAnimDurationMs;
         bool done = t >= 1;
         if (done)
         {
             t = 1;
-            _widthTimer!.Stop();
+            _widthAnimating = false;
+            System.Windows.Media.CompositionTarget.Rendering -= OnWidthAnimFrame;
         }
 
         double eased = 1 - Math.Pow(1 - t, 3);   // CubicEaseOut（和侧栏同一曲线）
-        int w = (int)Math.Round(_widthAnimFrom + ((_widthAnimTo - _widthAnimFrom) * eased));
-        _appliedBarWidthPx = w;
-        _barRect.Right = _barRect.Left + w;
-        _barRect.Top = _widthAnimTop;
-        _barRect.Bottom = _widthAnimBottom;
-
-        // ★ 动画帧走 light：不传 SWP_FRAMECHANGED ✗
-        //   否则每帧重建整个分层窗口表面 ⇒ 滚动 + 缓动一起跑就掉帧 ✗
-        ApplyBarPosition(0, light: true);
+        int wDip = (int)Math.Round(_widthAnimFrom + ((_widthAnimTo - _widthAnimFrom) * eased));
         _widthAnimFrames++;
+
+        // ★ **不动窗口** ✗ 只把插值宽度喂给视图 ⇒ 触发的是**纯重绘** ✓ 不是 SetWindowPos ✓
+        //   窗口宽度在 StartWidthAnimation 里已经一步到位 ✓
+        //   这里喂的是**内容宽度（DIP）** ✓ 与"切回 auto 时的宽度"同一量纲 ⇒ 终点不跳 ✓
+        double scale = _scale <= 0 ? 1.0 : _scale;
+        _appliedBarWidthPx = (int)Math.Round(wDip * scale);   // 窗口宽度口径（供 deadZone 判断 ✓）
+        _appliedContentWidthDip = wDip;                        // 内容宽度口径（供下次动画起点 ✓）
+        Bar.SetAnimationWidthDip(wDip);
 
         if (done)
         {
-            Log.Write("layout", $"宽度缓动结束: {_widthAnimFrom} → {_widthAnimTo}px " +
-                $"({_widthAnimDurationMs}ms/{_widthAnimFrames} 帧" +
-                (_widthAnimRolling ? "，滚动中 ✓" : ", 静止 ✓") + ")");
+            // 动画结束：把"临时强制宽度"还给本来该有的值 ✓
+            // （自动模式 = 0 ✓ 固定条宽 = 用户设的值 ✓ 两者都在 _appliedForcedWidthDip 里 ✓）
+            // ★ 终点 `_widthAnimTo` 就是 `Bar.BarWidth` ⇒ 与"切回 auto"后的宽度**完全一致** ⇒ 不跳 ✓
+            Bar.SetForcedWidthDip(_appliedForcedWidthDip);
+            Log.Write("layout", $"宽度缓动结束: {_widthAnimFrom} → {_widthAnimTo} DIP " +
+                $"(= {_widthAnimTo - _widthAnimFrom:+0;-0;0} DIP)" +
+                $"  {_widthAnimDurationMs}ms/{_widthAnimFrames} 帧" +
+                (_widthAnimRolling ? "，滚动中 ✓" : ", 静止 ✓"));
         }
     }
 
@@ -871,9 +935,15 @@ public partial class TaskbarBarWindow : Window
         double floorDip = Math.Max(160, barSettings.MinimumWidthDip);
         // 固定宽度就按用户设的值（设置界面已把可调下限卡在"歌词区最小宽度 + 其余部件"上 ✓
         // 所以不需要宿主再按内容宽度抬高它 ✗ —— 那样会让用户设 400 却得到 557）
+        // ★ 宽度动画进行中：用**动画目标**而不是"当前内容宽度" ✗
+        //   动画期间 Bar.BarWidth 每帧都在变 ⇒ 拿它算 wantedDip 会让 Place() 每 150ms
+        //   又发起一次新动画（自我激发）⇒ 动画永远结束不了 + 宽度乱跳 ✗
+        double contentDip = _widthAnimating && _widthAnimTo > 0
+            ? _widthAnimTo          // 已是 DIP ✓（不再除以 scale ✗）
+            : Bar.BarWidth;
         double wantedDip = barSettings.WidthMode == "fixed"
             ? Math.Max(floorDip, barSettings.WidthDip)
-            : Math.Max(floorDip, Bar.BarWidth);
+            : Math.Max(floorDip, contentDip);
 
         // ★ 自动模式下"内容想变的宽度"可能**超过空档** ✗
         //   原因：歌词自动适配的上限 = 最大限位（机器能达到的极限，用户要求 ✓）→ 不受当前配置约束 ✓
@@ -940,9 +1010,19 @@ public partial class TaskbarBarWindow : Window
             && _appliedBarWidthPx > 0
             && Math.Abs(choice.Width - _appliedBarWidthPx) >= deadZone;
 
-        if (wantAnim)
+        bool animating = _widthAnimating;
+
+        if (animating)
         {
-            // 滚动中单帧成本更高 ⇒ 更短的缓动（120ms）✓ 静止时仍是 220ms ✓
+            // ★ 动画进行中：**什么都不做** ✗（这是必须的守卫）
+            //   为什么：`Place()` 每 150ms 就会跑到这里 ✓ 而动画期间 `choice.Width` 恒等于动画目标
+            //   （wantedDip 用的是动画目标值 ✓）⇒ 若在这里再 StartWidthAnimation，就会**重启**动画 ✗
+            //   重启会把 `_widthAnimFrames` 清零、起点重置 ⇒ 进度永远重来 ⇒ `done` 分支一次都到不了 ✗
+            //   实测症状：日志里"宽度缓动结束"**零条**，而宽度确实一直在慢慢变 ✗
+            //   目标中途变了怎么办？等这次动画结束 ✓ 下一次 Place()（≤150ms）自然会发起新动画 ✓
+        }
+        else if (wantAnim)
+        {
             _widthAnimRolling = rolling;
             _widthAnimFrames = 0;
             StartWidthAnimation(choice.Width, barHeight, rolling ? 180 : 220);
@@ -953,8 +1033,11 @@ public partial class TaskbarBarWindow : Window
         }
         else
         {
-            _widthTimer?.Stop();
+            // 非动画路径：确保动画回调已退订 ✓（不然它还会继续喂宽度 ✗）
+            _widthAnimating = false;
+            System.Windows.Media.CompositionTarget.Rendering -= OnWidthAnimFrame;
             _appliedBarWidthPx = choice.Width;
+            _appliedContentWidthDip = (int)Math.Round(Bar.BarWidth);   // 落定：记下当前内容宽度 ✓
             _barRect.Right = choice.Left + choice.Width;
             _barRect.Bottom = top + barHeight;
             ApplyBarPosition(0);
@@ -976,7 +1059,7 @@ public partial class TaskbarBarWindow : Window
 
         // ★ 宽度动画进行中**不要覆盖**视图宽度 ✗
         //   动画每帧在给视图喂插值宽度 ✓ 这里覆盖会让它跳回去 ⇒ 动画被反复打断 ✗
-        if (_widthTimer?.IsEnabled != true)
+        if (!_widthAnimating)
         {
             Bar.SetForcedWidthDip(_appliedForcedWidthDip);
         }
@@ -1294,7 +1377,7 @@ public partial class TaskbarBarWindow : Window
             // 与"固定宽度"之间来回切换 → 界面抽搐（用户实测：557 以下必现）。
             // 现在两边共用 _appliedForcedWidthDip：只有 Place() 改它，这里只负责重新施加同一个值。
             // ★ 动画进行中不要覆盖视图宽度 ✗（这里每 150ms 都会跑到，覆盖会让动画跳回去 ✗）
-            if (_widthTimer?.IsEnabled != true)
+            if (!_widthAnimating)
             {
                 Bar.SetForcedWidthDip(_appliedForcedWidthDip);
             }
