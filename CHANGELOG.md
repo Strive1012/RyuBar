@@ -37,8 +37,16 @@
 
 ### 为什么这次回滚是手工做的
 
-项目**不是 git 仓库**（无 .git）⇒ 只能按 CHANGELOG 的逐条记录手工撤销 ✓
+**当时项目还不是 git 仓库**（无 .git）⇒ 只能按 CHANGELOG 的逐条记录手工撤销 ✓
 本次撤销涉及两个文件、约 15 处改动 ✓ 撤销后 `build.ps1` **0 错误**、所有新增标识符引用清零 ✓
+
+### 后续：已建立 git 仓库
+
+```
+git init -b main  +  初始提交 50b0a4f（152 文件 / 18074 行）+ 标签 v0.8.40
+忽略：bin、obj、dist、src.backup-*（约 108MB 产物 ✓ 见 .gitignore）
+今后要回滚某个状态：git log / git checkout <tag> / git switch -c 即可 ✓ 不必再手工比对 ✓
+```
 
 
 本项目是自研实现；参考对象 AF Media Bar 只在"外观风格与交互行为"层面作为参照，代码不复制。
