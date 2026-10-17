@@ -1836,19 +1836,15 @@ public sealed class BarView : FrameworkElement
         if (source == null)
         {
             // ★ 没有封面：画**用户提供的双连音符** ✓（半透明 ✓ 矢量 ✓）
-            //   用户："把本来该显示的图标替换为一个半透明的 png 音符图标"✓
-            //         "我想让占位符和图片中的这个封面图一样大"✓
-            //   ⇒ 用 `NoteGlyph.Bounds` 取**实际内容边界**再撑满封面矩形 ✗
-            //     不能按 viewBox 的 1024×1024 缩 ✗ —— path 在 viewBox 里四周有留白 ⇒ 视觉上比封面小一圈 ✗
-            Rect bounds = NoteGlyph.Bounds;
-            if (bounds.Width <= 0 || bounds.Height <= 0)
-            {
-                return;
-            }
-
-            double scale = Math.Min(drawn.Width / bounds.Width, drawn.Height / bounds.Height);
-            double offsetX = drawn.X + ((drawn.Width - (bounds.Width * scale)) / 2) - (bounds.X * scale);
-            double offsetY = drawn.Y + ((drawn.Height - (bounds.Height * scale)) / 2) - (bounds.Y * scale);
+            //   ★ 缩到参照图的比例 ✗ 不能按 1024 直接缩 ✓
+            //     那个 path 几乎占满 viewBox（bounds ≈ 944×988）⇒ 按 1024 缩 ≈ 撑满 ✗
+            //     用户给的是**参照图**：音符只占方块的一半多一点 ✓ ⇒ 取 0.62 ✓
+            const double designSize = 1024.0;
+            const double noteScale = 0.62;   // 占方块短边的比例 ✓ 参照图约 55~65% ✓
+            double side = Math.Min(drawn.Width, drawn.Height) * noteScale;
+            double scale = side / designSize;
+            double offsetX = drawn.X + ((drawn.Width - side) / 2);
+            double offsetY = drawn.Y + ((drawn.Height - side) / 2);
 
             dc.PushTransform(new TranslateTransform(offsetX, offsetY));
             dc.PushTransform(new ScaleTransform(scale, scale));
