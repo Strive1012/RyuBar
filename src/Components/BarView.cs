@@ -406,10 +406,42 @@ public sealed class BarView : FrameworkElement
     private static readonly Brush PressedBrush = Freeze(new SolidColorBrush(Color.FromArgb(0x1A, 0xFF, 0xFF, 0xFF)));
     private static readonly Brush ArtPlaceholderBrush = Freeze(new SolidColorBrush(Color.FromArgb(0x40, 0xFF, 0xFF, 0xFF)));
 
+    /// <summary>封面悬停时叠在图上的一层浅亮（透明度靠 PushOpacity 控制 ✓ 不用每帧新建画刷 ✗）。</summary>
+    private static readonly Brush ArtHoverTint = Freeze(new SolidColorBrush(Color.FromArgb(0x2E, 0xFF, 0xFF, 0xFF)));
+
+    /// <summary>
+    /// 封面中心播放/暂停图标的圆底。
+    /// ★ 用**白色**而不是黑色 ✗：实测黑底+白图标在暗色封面上几乎看不见 ✓
+    ///   （用户给的参考图里那首歌的封面就是深色键盘图 ✓ 图标完全糊掉 ✗）
+    ///   白底 + 深色图标在任何封面上都清晰 ✓
+    /// </summary>
+    private static readonly Brush ArtGlyphBackdrop = Freeze(new SolidColorBrush(Color.FromArgb(0xD8, 0xFF, 0xFF, 0xFF)));
+
+    /// <summary>封面中心图标颜色（近黑 ✓ 配白底 ✓）。</summary>
+    private static readonly Brush ArtGlyphBrush = Freeze(new SolidColorBrush(Color.FromRgb(0x16, 0x16, 0x16)));
+
     private Media.MediaSnapshot _snapshot = Media.MediaSnapshot.Empty;
     private BarHit _hover = BarHit.None;
     private BarHit _pressed = BarHit.None;
     private double _draggingProgressRatio = -1;
+
+    // ---- 封面悬停动画（用户："光标选中后封面微微放大，高亮效果，且出现暂停或播放按钮"✓
+    //                      "变色过程需要动画"✓）----
+
+    /// <summary>封面悬停的缓动进度：0 = 常态，1 = 完全悬停（放大 / 高亮 / 图标全显出 ✓）。</summary>
+    private double _artHoverT;
+
+    /// <summary>悬停动画的目标值（0 或 1 ✓）。</summary>
+    private double _artHoverTarget;
+
+    private double _artHoverFrom;
+    private DateTime _artHoverStart;
+
+    /// <summary>过渡时长（用户要求"变色过程需要动画"✓ 140ms 比 220ms 更跟手 ✓）。</summary>
+    private const int ArtHoverDurationMs = 140;
+
+    /// <summary>悬停过渡的驱动定时器（只在过渡期间跑 ✓ 到位就停 ✗ 不常驻占用 ✓）。</summary>
+    private System.Windows.Threading.DispatcherTimer? _artHoverTimer;
 
     // ---- 歌词 ----
     private LyricsView? _lyrics;
@@ -623,9 +655,8 @@ public sealed class BarView : FrameworkElement
         ClipToBounds = false;
         MouseLeave += (_, _) =>
         {
-            _hover = BarHit.None;
             _pressed = BarHit.None;
-            InvalidateVisual();
+            UpdateHover(BarHit.None);   // ★ 走统一入口 ✓ 顺带把封面悬停动画收回去 ✓
         };
         MouseMove += OnMouseMove;
         MouseLeftButtonDown += OnMouseDown;
@@ -655,6 +686,15 @@ public sealed class BarView : FrameworkElement
     public void Update(Media.MediaSnapshot snapshot)
     {
         _snapshot = snapshot;
+
+        // ★ 封面可能因为换歌/暂停而变成"没有封面"✗
+        //   若此时鼠标正好停在封面上，`_hover` 还是 Artwork ⇒ 悬停效果会留着 ✗
+        //   这里按新 snapshot 重新判一次 ✓（封面没了 ⇒ 目标变 0 ⇒ 动画收回 ✓）
+        if (_hover == BarHit.Artwork && snapshot.Artwork is null)
+        {
+            SetArtHoverTarget(0.0);
+        }
+
         Measure(Size.Empty);
         InvalidateMeasure();
         InvalidateVisual();
@@ -1666,22 +1706,128 @@ public sealed class BarView : FrameworkElement
     private readonly CachedLyricLine _cacheCurrent = new();
     private readonly CachedLyricLine _cacheNext = new();
 
+    /// <summary>
+    /// 设置封面悬停的目标值并启动过渡（用户："变色过程需要动画"✓）。
+    /// ★ 只有值真的变了才启动 ✗ 否则每次 MouseMove 都重启动画 ⇒ 进度永远重来 ✗
+    ///   （这个坑在宽度缓动上踩过一次 ✓ 这里直接避开 ✓）
+    /// </summary>
+    private void SetArtHoverTarget(double target)
+    {
+        if (Math.Abs(target - _artHoverTarget) < 0.001)
+        {
+            return;
+        }
+
+        _artHoverTarget = target;
+        _artHoverFrom = _artHoverT;
+        _artHoverStart = DateTime.Now;
+
+        _artHoverTimer ??= new System.Windows.Threading.DispatcherTimer(
+            System.Windows.Threading.DispatcherPriority.Render, Dispatcher)
+        {
+            Interval = TimeSpan.FromMilliseconds(16),
+        };
+        _artHoverTimer.Tick -= OnArtHoverTick;
+        _artHoverTimer.Tick += OnArtHoverTick;
+        _artHoverTimer.Start();
+    }
+
+    private void OnArtHoverTick(object? sender, EventArgs e)
+    {
+        double t = (DateTime.Now - _artHoverStart).TotalMilliseconds / ArtHoverDurationMs;
+        if (t >= 1)
+        {
+            _artHoverTimer!.Stop();
+            _artHoverT = _artHoverTarget;   // 精确落到目标 ✓（避免缓动留下 0.9999 的浮点残留 ✗）
+            InvalidateVisual();
+            return;
+        }
+
+        double eased = 1 - Math.Pow(1 - t, 3);   // CubicEaseOut（与宽度缓动、歌词滚动同一曲线 ✓）
+        _artHoverT = _artHoverFrom + ((_artHoverTarget - _artHoverFrom) * eased);
+        InvalidateVisual();
+    }
+
+    /// <summary>
+    /// 统一更新悬停命中的地方 ✗（原来 `_hover` 在三个地方各写一遍 ✓ 现在都在这里 ✓）。
+    /// 顺带驱动封面的悬停动画 ✓
+    /// </summary>
+    private void UpdateHover(BarHit hit)
+    {
+        if (hit != _hover)
+        {
+            _hover = hit;
+            InvalidateVisual();
+        }
+
+        // ★ 只有"真的有封面"才做放大/高亮/图标 ✓（没封面时放大会很怪 ✗）
+        SetArtHoverTarget(hit == BarHit.Artwork && _snapshot.Artwork is not null ? 1.0 : 0.0);
+    }
+
     private void DrawArtwork(DrawingContext dc, Rect art)
     {
         ImageSource? source = _snapshot.Artwork;
+
+        // ★ 封面悬停的进度（没封面就恒为 0 ⇒ 一切效果都不出现 ✓）
+        double hover = source is null ? 0.0 : _artHoverT;
+
+        // ★ "微微放大"：以**中心**为基准 ✓ 1.0 → 1.08（8% 是肉眼明显但不夸张的量 ✓）
+        Rect drawn = art;
+        if (hover > 0.001)
+        {
+            double grow = 1.0 + (0.08 * hover);
+            double dx = art.Width * (grow - 1.0) / 2.0;
+            double dy = art.Height * (grow - 1.0) / 2.0;
+            drawn = Rect.Inflate(art, dx, dy);
+        }
+
         if (source == null)
         {
             // 没有封面：画一个底色 + 音符占位
-            dc.DrawRoundedRectangle(ArtPlaceholderBrush, null, art, ArtRadius, ArtRadius);
-            Geometry note = Glyph.Note(art);
+            dc.DrawRoundedRectangle(ArtPlaceholderBrush, null, drawn, ArtRadius, ArtRadius);
+            Geometry note = Glyph.Note(drawn);
             dc.DrawGeometry(GlyphDisabledBrush, null, note);
             return;
         }
 
-        double radius = Math.Min(ArtRadius, art.Height / 2);
-        dc.PushClip(new RectangleGeometry(art, radius, radius));
-        dc.DrawImage(source, art);
+        double radius = Math.Min(ArtRadius, drawn.Height / 2);
+
+        // ★ 裁剪到**放大后的**矩形 ✗ 不能裁到原矩形 ✓（否则放大被裁掉 = 看不出放大 ✗）
+        dc.PushClip(new RectangleGeometry(drawn, radius, radius));
+        dc.DrawImage(source, drawn);
+        if (hover > 0.001)
+        {
+            // 叠一层浅亮：这就是"高亮效果"✓ 透明度跟随 hover 缓动 ⇒ 变色过程有动画 ✓
+            dc.PushOpacity(hover);
+            dc.DrawRectangle(ArtHoverTint, null, drawn);
+            dc.Pop();
+        }
         dc.Pop();
+
+        if (hover > 0.001)
+        {
+            // 高亮描边（accent 色 ✓ 随 hover 渐显 ✓）
+            Pen pen = new(AccentBrush, 1.6) { StartLineCap = PenLineCap.Round, EndLineCap = PenLineCap.Round };
+            dc.PushOpacity(hover);
+            dc.DrawRoundedRectangle(null, pen, Rect.Inflate(drawn, 0.8, 0.8), radius + 0.8, radius + 0.8);
+            dc.Pop();
+        }
+
+        if (hover > 0.001)
+        {
+            // ★ 中心按钮：播放中显示 ⏸（点了会暂停 ✓）、已暂停显示 ▶（点了会播放 ✓）
+            //   语义 = "点下去会发生什么" ✓ 和右侧控制按钮一致 ✓
+            double size = drawn.Height * 0.46;
+            double cx0 = drawn.X + (drawn.Width / 2);
+            double cy0 = drawn.Y + (drawn.Height / 2);
+            Rect glyphBox = new(cx0 - (size / 2), cy0 - (size / 2), size, size);
+
+            dc.PushOpacity(hover);
+            dc.DrawEllipse(ArtGlyphBackdrop, null, new Point(cx0, cy0), size * 0.95, size * 0.95);
+            Geometry glyph = _snapshot.IsPlaying ? Glyph.Pause(glyphBox) : Glyph.Play(glyphBox);
+            dc.DrawGeometry(ArtGlyphBrush, null, glyph);
+            dc.Pop();
+        }
     }
 
     private void DrawButton(DrawingContext dc, Rect box, BarHit hit, Func<Rect, Geometry> glyph, bool enabled)
@@ -1722,18 +1868,14 @@ public sealed class BarView : FrameworkElement
         }
 
         BarHit hit = HitTestBar(point);
-        if (hit != _hover)
-        {
-            _hover = hit;
-            InvalidateVisual();
-        }
+        UpdateHover(hit);   // ★ 统一入口 ✓ 顺带驱动封面悬停动画 ✓
     }
 
     private void OnMouseDown(object sender, MouseButtonEventArgs e)
     {
         Point point = e.GetPosition(this);
         BarHit hit = HitTestBar(point);
-        _hover = hit;
+        UpdateHover(hit);
         _pressed = hit;
 
         if (hit == BarHit.Progress && _snapshot.CanSeek && (ShowBarProgress || ShowRingProgress))
