@@ -1804,18 +1804,24 @@ public sealed class BarView : FrameworkElement
         }
         dc.Pop();
 
-        if (hover > 0.001)
+        // ★ 图标的可见度（用户："当歌曲暂停时封面图标要有个反馈，比如封面上显示一个播放图标"✓）
+        //   播放中 → 跟随悬停 ✓（常态保持干净 ✗ 不挂图标）
+        //   已暂停 → **常驻**显示 ▶ ✓（一眼就能看出"现在没在放"✓ 也让"点它继续"变得显然 ✓）
+        //   注意：放大和高亮仍然只跟 hover ✓ 暂停时封面不会变大 ✓（用户只要求图标反馈 ✓）
+        double glyphAlpha = _snapshot.IsPlaying ? hover : 1.0;
+
+        if (glyphAlpha > 0.001)
         {
             // ★ 中心按钮：播放中显示 ⏸（点了会暂停 ✓）、已暂停显示 ▶（点了会播放 ✓）
             //   语义 = "点下去会发生什么" ✓ 和右侧控制按钮一致 ✓
-            //   样式：淡黑半透明圆底 + 白色图标 ✓ 刻意做小（0.36）× 淡（圆底 0.76）✓
-            //   —— 用户反馈"按钮太丑"✓ 上一版是「白圆底 + 黑图标」又大又抢眼 ✗
+            //   样式：淡黑半透明圆底 + 白色图标 ✓ 刻意做小（0.38）× 淡（圆底 0.76）✓
             double size = drawn.Height * 0.38;
             double cx0 = drawn.X + (drawn.Width / 2);
             double cy0 = drawn.Y + (drawn.Height / 2);
             Rect glyphBox = new(cx0 - (size / 2), cy0 - (size / 2), size, size);
 
-            dc.PushOpacity(hover);
+            // 暂停时的常驻图标略微收一点不透明度 ✓ 不至于像"永远有个按钮贴在那儿" ✗
+            dc.PushOpacity(glyphAlpha * (_snapshot.IsPlaying ? 1.0 : 0.92));
             dc.DrawEllipse(ArtGlyphBackdrop, null, new Point(cx0, cy0), size * 0.76, size * 0.76);
             Geometry glyph = _snapshot.IsPlaying ? Glyph.Pause(glyphBox) : Glyph.Play(glyphBox);
             dc.DrawGeometry(ArtGlyphBrush, null, glyph);
