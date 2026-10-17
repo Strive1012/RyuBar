@@ -687,8 +687,8 @@ public sealed class ServicePanel : Window
 
         Button button = new()
         {
-            Width = 40,
-            Height = 40,
+            Width = 46,
+            Height = 46,
             Margin = new Thickness(8, 0, 8, 0),
             Background = Brushes.Transparent,
             BorderThickness = new Thickness(0),
@@ -705,8 +705,8 @@ public sealed class ServicePanel : Window
     {
         Button button = new()
         {
-            Width = 40,
-            Height = 40,
+            Width = 46,
+            Height = 46,
             Margin = new Thickness(8, 0, 8, 0),
             Background = Brushes.Transparent,
             BorderThickness = new Thickness(0),
