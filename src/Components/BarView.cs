@@ -16,6 +16,12 @@ public enum BarHit
     PlayPause,
     Next,
     Progress,
+
+    /// <summary>
+    /// 频谱区域。**目前不可点**（宿主不做任何事 ✓ 也不给手型光标 ✗）
+    /// 用户说"以后要做点频谱的功能"⇒ 先把命中区单独留出来 ✓ 免得以后再动判定逻辑 ✓
+    /// </summary>
+    Spectrum,
 }
 
 /// <summary>一行歌词的显示数据（宿主按播放位置算好，视图只负责画）。</summary>
@@ -1180,16 +1186,7 @@ public sealed class BarView : FrameworkElement
         x += _artSize + _artTextGap;
 
         // 文字吃掉右侧所有部件左边的剩余空间。
-        // 注意：三个开关全关时右侧没有任何部件 → PrevX/ProgressX/TimeX 都是 NaN ✗，
-        // 直接拿去做 Min 会把文字宽度算成 NaN → 文字**画不出来**（实测踩到）→ 用右边缘兜底。
-        double rightLimit = side.ShowControls
-            ? side.PrevX
-            : side.ShowProgress
-                ? side.ProgressX
-                : side.ShowTime
-                    ? side.TimeX
-                    : w - _padX;
-        double textWidth = Math.Max(TextMinWidth, Math.Min(layout.TextWidth, rightLimit - _progressGap - x));
+        double textWidth = TextWidthDip(w, layout, side);
 
         // ★ 文字区的悬停反馈（用户："鼠标放到歌词上没有反馈"✓）
         //   这块现在**是可点的**（单击弹二级菜单 ✓ 双击激活播放源 ✓）却没有任何视觉提示 ✗
@@ -2096,8 +2093,29 @@ public sealed class BarView : FrameworkElement
     private const double RingHitToleranceDip = 6;
 
     /// <summary>命中的区域。</summary>
-    public BarHit HitTestBar(Point point)
+    /// <summary>
+    /// 文字区（歌词/标题）**实际可用宽度**（DIP）。
+    /// ★ 绘制和命中**必须共用这一份** ✗
+    ///   否则会出现"光标在频谱上却被判定成选中歌词"这类错位 ✓（用户实测踩到 ✓）
+    /// </summary>
+    private double TextWidthDip(double w, BarLayout layout, RightSide side)
     {
+        double x = _padX + _artSize + _artTextGap;
+
+        // 右侧边界：三个开关全关时 PrevX/ProgressX/TimeX 都是 NaN ✗ ⇒ 用条子右边缘兜底 ✓
+        // （不兜底的话文本宽度会算成 NaN ⇒ 文字根本画不出来 ✓ 实测踩过 ✓）
+        double rightLimit = side.ShowControls
+            ? side.PrevX
+            : side.ShowProgress
+                ? side.ProgressX
+                : side.ShowTime
+                    ? side.TimeX
+                    : w - _padX;
+
+        return Math.Max(TextMinWidth, Math.Min(layout.TextWidth, rightLimit - _progressGap - x));
+    }
+
+    public BarHit HitTestBar(Point point)    {
         double w = ActualWidth;
         double h = ActualHeight;
         if (w <= 1 || h <= 1 || point.X < 0 || point.Y < 0 || point.X > w || point.Y > h)
@@ -2155,7 +2173,28 @@ public sealed class BarView : FrameworkElement
             return BarHit.Progress;
         }
 
-        return BarHit.Text;
+        // ★ 频谱要单独认领 ✗ 不能让它落到最后的兜底 ✓
+        //   用户实测：光标在频谱上却被判定成"选中歌词"✗（因为原来末尾是 `return BarHit.Text` ✓ 兜底吃掉了整个右侧 ✓）
+        //   现在频谱返回 Spectrum ✓ —— 目前宿主不做事 ✓ 但命中区已经和绘制对齐 ✓
+        if (side.ShowSpectrum)
+        {
+            double spectrumWidth = SpectrumWidth * _contentScale;
+            if (point.X >= side.SpectrumX - 2 && point.X <= side.SpectrumX + spectrumWidth + 2)
+            {
+                return BarHit.Spectrum;
+            }
+        }
+
+        // ★ 只有**文字区实际占据的横向范围**才算 Text ✗ 其余一律 None ✓
+        //   （用户："应该是在歌词上才对"✓ 空白不算可点 ✓）
+        double textX = _padX + _artSize + _artTextGap;
+        double textWidth = TextWidthDip(w, layout, side);
+        if (point.X >= textX && point.X <= textX + textWidth)
+        {
+            return BarHit.Text;
+        }
+
+        return BarHit.None;
     }
 
     // ---------------------------------------------------------------- 工具
