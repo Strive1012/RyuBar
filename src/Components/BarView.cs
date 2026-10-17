@@ -320,8 +320,10 @@ public sealed class BarView : FrameworkElement
     /// 空闲态：**连媒体会话都没有**（没有音源 ✓）。
     /// 用户要求这种状态下"封面用音符图标占位，且不显示歌词 / 进度条 / 上下首与播放键" ✓
     /// ⇒ 条子收成只有封面大小的一小块 ✓
+    /// ★ 必须是 public ✗ 宿主落位时也要看它 ✓
+    ///   （否则宿主那边的"最小宽度下限"会把条子撑成一根空条子 ✓ 只剩一个音符挂在左边 ✓ 很难看 ✗）
     /// </summary>
-    private bool IsIdle => !_snapshot.HasSession;
+    public bool IsIdle => !_snapshot.HasSession;
 
     /// <summary>条状进度是否真的画：要同时满足"有音源 + 曲目有时间轴 + 用户开了条状"。</summary>
     private bool ShowBarProgress => !IsIdle && _snapshot.CanShowProgress && _barProgress;

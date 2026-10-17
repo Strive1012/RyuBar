@@ -871,9 +871,14 @@ public partial class TaskbarBarWindow : Window
         double floorDip = Math.Max(160, barSettings.MinimumWidthDip);
         // 固定宽度就按用户设的值（设置界面已把可调下限卡在"歌词区最小宽度 + 其余部件"上 ✓
         // 所以不需要宿主再按内容宽度抬高它 ✗ —— 那样会让用户设 400 却得到 557）
-        double wantedDip = barSettings.WidthMode == "fixed"
-            ? Math.Max(floorDip, barSettings.WidthDip)
-            : Math.Max(floorDip, Bar.BarWidth);
+        // ★ 空闲态（没有音源）：**不套最小宽度下限** ✗ 条子直接等于内容宽度（= 只有封面）✓
+        //   用户实测反馈：只把视图里的文字宽度归 0 是不够的 ✗
+        //   宿主这边还有 floorDip（默认 160 DIP）⇒ 条子仍被撑成一根空条子，左边挂个音符，很难看 ✗
+        double wantedDip = Bar.IsIdle
+            ? Math.Max(48, Bar.BarWidth)   // 留一个下限只为避免极端情况下的 0 宽度 ✓
+            : barSettings.WidthMode == "fixed"
+                ? Math.Max(floorDip, barSettings.WidthDip)
+                : Math.Max(floorDip, Bar.BarWidth);
 
         // ★ 自动模式下"内容想变的宽度"可能**超过空档** ✗
         //   原因：歌词自动适配的上限 = 最大限位（机器能达到的极限，用户要求 ✓）→ 不受当前配置约束 ✓
