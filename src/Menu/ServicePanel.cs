@@ -383,6 +383,26 @@ public sealed class ServicePanel : Window
 
     // ---------------------------------------------------------------- 打开/关闭动画
 
+    /// <summary>
+    /// 预热：把窗口和 HWND 先建出来，但保持不可见 ✓
+    /// ★ 用户实测"点击歌词后要等 1 秒"✓ 其中一二百毫秒是首次 Show 的开销
+    ///   （创建 HWND + 建分层表面 + 首次布局 ✓）挪到启动时，点击时就只剩定位和动画 ✓
+    /// </summary>
+    public void PrepareForShow()
+    {
+        if (IsVisible)
+        {
+            return;
+        }
+
+        double savedOpacity = Opacity;
+        Opacity = 0;
+        Show();
+        UpdateLayout();
+        Hide();
+        Opacity = savedOpacity;
+    }
+
     /// <summary>带动画关闭 ✗ 直接 Hide() 会"啪"地消失 ✓</summary>
     public void AnimatedHide()
     {

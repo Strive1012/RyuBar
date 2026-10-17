@@ -539,7 +539,10 @@ public sealed class BarView : FrameworkElement
     public event Action? LyricDoubleClicked;
 
     /// <summary>单击确认延迟（毫秒 ✓）。要大于系统双击判定的时间窗 ✓</summary>
-    private const int LyricSingleClickDelayMs = 320;
+    // ★ 200ms（原 320）✗ 用户实测"感觉 1 秒后才反应过来"✓
+    //   320 + 面板首次创建(~300) + 动画 180 ≈ 800ms ✓
+    //   200 仍明显大于"两次点击的常见间隔"（误判双击的概率很低 ✓），但响应快得多 ✓
+    private const int LyricSingleClickDelayMs = 200;
 
     private System.Windows.Threading.DispatcherTimer? _lyricClickTimer;
 

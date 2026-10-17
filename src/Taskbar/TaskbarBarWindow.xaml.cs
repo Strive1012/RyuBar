@@ -363,6 +363,23 @@ public partial class TaskbarBarWindow : Window
         EnsureProgressTimers();
         EnsureLyricsTimer();
         Lyrics.LyricsService.WarmUp();   // 后台预热歌词连接池（冷连接 ~700ms → 热连接 ~100ms）
+
+        // ★ 二级面板**启动时就建好**但先不显示 ✗
+        //   用户实测"点击歌词后要等 1 秒才弹出来"✓ —— 其中一二百毫秒是首次构造开销：
+        //   一堆控件 + 创建 HWND + 建分层表面 ✓ 这些都挪到启动时，点击就只剩 Show ✓
+        //   用 Dispatcher 排队到"当前一轮消息处理完之后"，不拖慢启动 ✓
+        Dispatcher.BeginInvoke(new Action(() =>
+        {
+            try
+            {
+                _servicePanel ??= CreateServicePanel();
+                _servicePanel.PrepareForShow();
+            }
+            catch (Exception exception)
+            {
+                Log.Write("input", $"预热二级面板失败: {exception.GetType().Name}");
+            }
+        }), System.Windows.Threading.DispatcherPriority.ApplicationIdle);
     }
 
     /// <summary>通知持有方：本窗口已不可用，需要重建。只会通知一次。</summary>
