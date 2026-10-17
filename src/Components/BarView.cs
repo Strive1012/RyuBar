@@ -413,6 +413,14 @@ public sealed class BarView : FrameworkElement
     private static readonly Brush PressedBrush = Freeze(new SolidColorBrush(Color.FromArgb(0x1A, 0xFF, 0xFF, 0xFF)));
     private static readonly Brush ArtPlaceholderBrush = Freeze(new SolidColorBrush(Color.FromArgb(0x40, 0xFF, 0xFF, 0xFF)));
 
+    /// <summary>
+    /// 没有封面时的**音符**颜色（蓝灰 ✓ 与媒体条的低饱和蓝底协调 ✓）。
+    /// 用户："像这种只显示图标，不填充其他部分"✓
+    /// 原来用 GlyphDisabledBrush（很淡 ✓）＋ 一块浅白圆角底 ⇒ 看着像"一个空封面"✗
+    /// 现在只画音符 ✓ 颜色稍提亮到能看清又不抢眼 ✓
+    /// </summary>
+    private static readonly Brush NotePlaceholderBrush = Freeze(new SolidColorBrush(Color.FromRgb(0x93, 0xA3, 0xBC)));
+
     /// <summary>封面悬停时叠在图上的一层浅亮（透明度靠 PushOpacity 控制 ✓ 不用每帧新建画刷 ✗）。</summary>
     private static readonly Brush ArtHoverTint = Freeze(new SolidColorBrush(Color.FromArgb(0x2E, 0xFF, 0xFF, 0xFF)));
 
@@ -1808,10 +1816,11 @@ public sealed class BarView : FrameworkElement
 
         if (source == null)
         {
-            // 没有封面：画一个底色 + 音符占位
-            dc.DrawRoundedRectangle(ArtPlaceholderBrush, null, drawn, ArtRadius, ArtRadius);
+            // ★ 没有封面：**只画音符** ✗ 不画那个浅白圆角方块 ✓
+            //   用户："像这种只显示图标，不填充其他部分" ✓
+            //   原来"浅白圆角矩形 + 音符"看起来像"一个空封面"，显眼又多余 ✗
             Geometry note = Glyph.Note(drawn);
-            dc.DrawGeometry(GlyphDisabledBrush, null, note);
+            dc.DrawGeometry(NotePlaceholderBrush, null, note);
             return;
         }
 
