@@ -416,12 +416,11 @@ public sealed class BarView : FrameworkElement
     private static readonly Brush ArtPlaceholderBrush = Freeze(new SolidColorBrush(Color.FromArgb(0x40, 0xFF, 0xFF, 0xFF)));
 
     /// <summary>
-    /// 没有封面时的**音符**颜色（蓝灰 ✓ 与媒体条的低饱和蓝底协调 ✓）。
-    /// 用户："像这种只显示图标，不填充其他部分"✓
-    /// 原来用 GlyphDisabledBrush（很淡 ✓）＋ 一块浅白圆角底 ⇒ 看着像"一个空封面"✗
-    /// 现在只画音符 ✓ 颜色稍提亮到能看清又不抢眼 ✓
+    /// 没有封面时的**音符**颜色（半透明蓝灰 ✓ 与媒体条的低饱和蓝底协调 ✓）。
+    /// 用户："把本来该显示的图标替换为一个半透明的 png 音符图标"✓
+    /// 0x9E ≈ 62% 不透明度 ✓ 含蓄但看得清 ✓（太淡会像没画 ✗ 太实又抢眼 ✗）
     /// </summary>
-    private static readonly Brush NotePlaceholderBrush = Freeze(new SolidColorBrush(Color.FromRgb(0x93, 0xA3, 0xBC)));
+    private static readonly Brush NotePlaceholderBrush = Freeze(new SolidColorBrush(Color.FromArgb(0x9E, 0x93, 0xA3, 0xBC)));
 
     /// <summary>封面悬停时叠在图上的一层浅亮（透明度靠 PushOpacity 控制 ✓ 不用每帧新建画刷 ✗）。</summary>
     private static readonly Brush ArtHoverTint = Freeze(new SolidColorBrush(Color.FromArgb(0x2E, 0xFF, 0xFF, 0xFF)));
@@ -436,6 +435,19 @@ public sealed class BarView : FrameworkElement
 
     /// <summary>封面中心图标颜色（白色 ✓ 配淡黑圆底 ✓）。</summary>
     private static readonly Brush ArtGlyphBrush = Freeze(new SolidColorBrush(Color.FromRgb(0xFF, 0xFF, 0xFF)));
+
+    /// <summary>
+    /// 没有封面时的音符图标（**用户提供的 SVG path** ✓ 双连音符 ♫ ✓ viewBox 1024×1024 ✓）。
+    /// ★ 为什么直接 Parse SVG 的 path ✗ 不引入 SVG 库 ✓
+    ///   WPF 的 Path 标记语法与 SVG 的 `d` 高度兼容（M/L/C/S/Q/T/A/H/V/Z + 相对命令全都支持 ✓）
+    ///   ⇒ `Geometry.Parse` 一行搞定 ✓ 零新依赖 ✓ 而且是矢量 ✓
+    ///   （用户最初想用 PNG ✗ 但这是 150% DPI 的机器 ⇒ 位图会虚 ✗ 矢量不会 ✓）
+    /// </summary>
+    private static readonly Geometry NoteGlyph = Geometry.Parse(
+        "M944 73.2v774.5c0 79.4-71.6 143.7-160 143.7s-160-64.3-160-143.7c0-79.4 " +
+        "71.6-143.7 160-143.7h80c8.8 0 16-7.2 16-16V289.4c0-2.5-2.2-4.4-4.7-3.9l-568 97c-1.9 0.3-3.3 2-3.3 " +
+        "3.9v341.3c0 75-68 135.7-152 135.7S0 802.7 0 727.7C0 652.8 68 592 152 592h72c8.8 0 16-7.2 " +
+        "16-16V159.6c0-31.7 23.2-58.6 54.5-63.3l576-86.4C909.2 4.1 944 34 944 73.2z");
 
     private Media.MediaSnapshot _snapshot = Media.MediaSnapshot.Empty;
     private BarHit _hover = BarHit.None;
@@ -865,22 +877,27 @@ public sealed class BarView : FrameworkElement
 
         // 其余部件（封面 / 按钮 / 进度条 / 时间 / 留白）的总宽 —— 与文字区宽度无关。
         // 按用户开关累加：三个开关任意组合都要能用，所以宽度必须跟着变。
+        // ★ 空闲态一律不占宽 ✗（用户截图反馈：设置里开着的按钮/频谱/进度虽然**不画**，
+        //   但宽度还算在里面 ⇒ 条子仍是一根空条子，左边挂个音符 ✗）
         double rightParts = 0;
-        if (_showControls)
+        if (!IsIdle)
         {
-            rightParts += (_buttonSize * 3) + (_buttonGap * 2);
-        }
-        if (_spectrum)
-        {
-            rightParts += SpectrumWidth * _contentScale;   // 频谱占宽（在歌词右侧 ✓）
-        }
-        if (ShowBarProgress)
-        {
-            rightParts += _progressGap + _progressWidth;
-        }
-        if (ShowTimeText)
-        {
-            rightParts += (ShowBarProgress ? _timeGap : _progressGap) + timeText.Width;
+            if (_showControls)
+            {
+                rightParts += (_buttonSize * 3) + (_buttonGap * 2);
+            }
+            if (_spectrum)
+            {
+                rightParts += SpectrumWidth * _contentScale;   // 频谱占宽（在歌词右侧 ✓）
+            }
+            if (ShowBarProgress)
+            {
+                rightParts += _progressGap + _progressWidth;
+            }
+            if (ShowTimeText)
+            {
+                rightParts += (ShowBarProgress ? _timeGap : _progressGap) + timeText.Width;
+            }
         }
         double rightGap = rightParts > 0 ? _progressGap : 0;
 
@@ -1818,11 +1835,21 @@ public sealed class BarView : FrameworkElement
 
         if (source == null)
         {
-            // ★ 没有封面：**只画音符** ✗ 不画那个浅白圆角方块 ✓
-            //   用户："像这种只显示图标，不填充其他部分" ✓
-            //   原来"浅白圆角矩形 + 音符"看起来像"一个空封面"，显眼又多余 ✗
-            Geometry note = Glyph.Note(drawn);
-            dc.DrawGeometry(NotePlaceholderBrush, null, note);
+            // ★ 没有封面：画**用户提供的双连音符** ✓（半透明 ✓ 矢量 ✓）
+            //   用户："把本来该显示的图标替换为一个半透明的 png 音符图标"✓
+            //   这里用矢量而不是 png ✓ 150% DPI 下不会虚 ✓
+            //   原图 viewBox 是 1024×1024 ⇒ 按目标矩形的短边等比缩放并居中 ✓
+            const double designSize = 1024.0;
+            double side = Math.Min(drawn.Width, drawn.Height);
+            double scale = side / designSize;
+            double offsetX = drawn.X + ((drawn.Width - side) / 2);
+            double offsetY = drawn.Y + ((drawn.Height - side) / 2);
+
+            dc.PushTransform(new TranslateTransform(offsetX, offsetY));
+            dc.PushTransform(new ScaleTransform(scale, scale));
+            dc.DrawGeometry(NotePlaceholderBrush, null, NoteGlyph);
+            dc.Pop();
+            dc.Pop();
             return;
         }
 
