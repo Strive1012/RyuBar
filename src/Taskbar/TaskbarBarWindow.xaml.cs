@@ -160,6 +160,7 @@ public partial class TaskbarBarWindow : Window
 
     private long _spectrumLogAt;
     private long _speedLogAt;
+    private long _lyricRowLogAt;
 
 
     // ---- 宽度缓动（歌词换句时条子平滑变宽/变窄，而不是瞬间跳）----
@@ -1635,6 +1636,18 @@ public partial class TaskbarBarWindow : Window
             double progress = current.EndMs > current.StartMs
                 ? Math.Clamp((positionMs - current.StartMs) / (double)(current.EndMs - current.StartMs), 0, 1)
                 : 0;
+
+            // 诊断：歌词不推进时，确认行的实际时间戳是否合理（用户反馈"歌词不动"✓）
+            long lyricNow = Environment.TickCount64;
+            if (lyricNow - _lyricRowLogAt >= 2000)
+            {
+                _lyricRowLogAt = lyricNow;
+                Log.Write("lyrics",
+                    $"行号={index}/{track.Lines.Count} 位置={positionMs}ms " +
+                    $"当前行=[{current.StartMs}~{current.EndMs}] " +
+                    $"首行={track.Lines[0].StartMs} 末行={track.Lines[^1].StartMs} " +
+                    $"有逐字={current.HasSyllables}");
+            }
 
             Bar.SetLyrics(new Components.LyricsView(
                 new Components.LyricsLineView(current.Text, current.Syllables, progress, positionMs),

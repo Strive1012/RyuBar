@@ -46,6 +46,7 @@ public sealed class ServicePanel : Window
     private readonly TextBlock _title;
     private readonly TextBlock _artist;
     private readonly TextBlock _source;
+    private readonly TextBlock _lyricsSource;
     private readonly Grid _progressHost;
     private readonly Border _progressTrack;
     private readonly Border _progressFill;
@@ -149,11 +150,14 @@ public sealed class ServicePanel : Window
         _title = MakeText(17, FontWeights.SemiBold, PrimaryText);
         _artist = MakeText(13, FontWeights.Normal, SecondaryText);
         _source = MakeText(11.5, FontWeights.Normal, TertiaryText);
+        _lyricsSource = MakeText(11.5, FontWeights.Normal, TertiaryText);
         _artist.Margin = new Thickness(0, 3, 0, 0);
         _source.Margin = new Thickness(0, 3, 0, 0);
+        _lyricsSource.Margin = new Thickness(0, 3, 0, 0);
         texts.Children.Add(_title);
         texts.Children.Add(_artist);
         texts.Children.Add(_source);
+        texts.Children.Add(_lyricsSource);
         Grid.SetColumn(texts, 1);
         header.Children.Add(texts);
 
@@ -502,7 +506,7 @@ public sealed class ServicePanel : Window
         _artwork.Source = snapshot.Artwork;
         _title.Text = snapshot.DisplayTitle;
         _artist.Text = string.IsNullOrWhiteSpace(snapshot.Artist) ? "—" : snapshot.Artist;
-        _source.Text = $"来源：{SourceNames.Friendly(snapshot.Source)}";
+        _source.Text = $"媒体源：{SourceNames.Friendly(snapshot.Source)}";
 
         DateTimeOffset now = DateTimeOffset.Now;
         if (!_dragging)
