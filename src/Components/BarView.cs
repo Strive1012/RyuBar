@@ -514,6 +514,22 @@ public sealed class BarView : FrameworkElement
     /// <summary>当前是否在做逐字推进（同样需要 60fps 连续重画，否则高亮会按进度定时器的节奏跳）。</summary>
     public bool IsKaraokeActive { get; private set; }
 
+    // ---- 歌词区交互（用户要求 ✓）----
+
+    /// <summary>
+    /// 歌词区被**单击**（用户要求：在 bar 上方调出二级菜单 ✓）。
+    /// ★ 延迟 320ms 才发 ✗ —— 否则双击会先触发一次单击 ✓
+    /// </summary>
+    public event Action? LyricClicked;
+
+    /// <summary>歌词区被**双击**（用户要求：快速打开当前播放源应用 ✓）。立刻发 ✓ 并取消待发的单击 ✓。</summary>
+    public event Action? LyricDoubleClicked;
+
+    /// <summary>单击确认延迟（毫秒 ✓）。要大于系统双击判定的时间窗 ✓</summary>
+    private const int LyricSingleClickDelayMs = 320;
+
+    private System.Windows.Threading.DispatcherTimer? _lyricClickTimer;
+
     /// <summary>设置歌词显示数据（null = 没有歌词，回落到标题/歌手）。</summary>
     public void SetLyrics(LyricsView? view)
     {
@@ -1949,11 +1965,41 @@ public sealed class BarView : FrameworkElement
         UpdateHover(hit);
         _pressed = hit;
 
+        // ★ 歌词区：单击 / 双击分开处理（用户要求 ✓）
+        //   单击 → 延迟确认（等双击判定 ✓）
+        //   双击 → 取消待发的单击 ✓ 立刻通知宿主去激活播放源
+        if (hit == BarHit.Text)
+        {
+            if (e.ClickCount >= 2)
+            {
+                _lyricClickTimer?.Stop();
+                LyricDoubleClicked?.Invoke();
+            }
+            else
+            {
+                _lyricClickTimer ??= new System.Windows.Threading.DispatcherTimer(
+                    System.Windows.Threading.DispatcherPriority.Input, Dispatcher)
+                {
+                    Interval = TimeSpan.FromMilliseconds(LyricSingleClickDelayMs),
+                };
+                _lyricClickTimer.Tick -= OnLyricClickTimerTick;
+                _lyricClickTimer.Tick += OnLyricClickTimerTick;
+                _lyricClickTimer.Stop();   // 连点时重新计时 ✓
+                _lyricClickTimer.Start();
+            }
+        }
+
         if (hit == BarHit.Progress && _snapshot.CanSeek && (ShowBarProgress || ShowRingProgress))
         {
             SetDragRatio(RatioFromPoint(point));
         }
         InvalidateVisual();
+    }
+
+    private void OnLyricClickTimerTick(object? sender, EventArgs e)
+    {
+        _lyricClickTimer!.Stop();
+        LyricClicked?.Invoke();
     }
 
     private void OnMouseUp(object sender, MouseButtonEventArgs e)

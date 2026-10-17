@@ -286,6 +286,8 @@ public partial class TaskbarBarWindow : Window
         Bar.Clicked += OnBarClicked;
         Bar.SeekRequested += OnSeekRequested;
         Bar.Wheeled += OnWheeled;
+        Bar.LyricClicked += OnLyricClicked;              // 单击歌词 → 二级菜单（阶段 B）
+        Bar.LyricDoubleClicked += OnLyricDoubleClicked;  // 双击歌词 → 激活播放源（已完成 ✓）
         _media.Changed += OnMediaChanged;
         Bar.Update(_media.Snapshot);
 
@@ -1168,6 +1170,60 @@ public partial class TaskbarBarWindow : Window
                 _ = _media.SkipNextAsync();
                 break;
         }
+    }
+
+    /// <summary>
+    /// 歌词区**单击** → 在条子**上方**调出二级菜单（用户要求 ✓ 进度条 + 单应用音量 ✓）。
+    /// 阶段 A 先做单击/双击的区分与双击激活 ✓ 菜单本体在阶段 B ✓
+    /// </summary>
+    private void OnLyricClicked()
+    {
+        Log.Write("input", "歌词单击（二级菜单待阶段 B 实现）");
+    }
+
+    /// <summary>
+    /// 歌词区**双击** → 快速打开**当前正在运行的**播放源应用（用户要求 ✓）。
+    /// ★ 只激活已运行的实例 ✗ 绝不启动新进程 ✓（所以找不到就什么都不做 ✓）
+    /// </summary>
+    private void OnLyricDoubleClicked()
+    {
+        string source = _media.Snapshot.Source;
+        Log.Write("input", $"歌词双击 → 激活播放源：'{source}'");
+
+        string? exe = Media.SourceNames.ExecutableName(source);
+        if (exe is null)
+        {
+            Log.Write("input", "  无法从来源标识解析出可执行名（UWP 包等），跳过");
+            return;
+        }
+
+        foreach (System.Diagnostics.Process process in System.Diagnostics.Process.GetProcessesByName(exe))
+        {
+            try
+            {
+                IntPtr hwnd = process.MainWindowHandle;
+                if (hwnd == IntPtr.Zero)
+                {
+                    continue;   // 后台进程 / 没窗口 ⇒ 不是用户想打开的那个 ✓
+                }
+
+                // 最小化的先还原 ✓ 再前置 ✓
+                NativeMethods.ShowWindow(hwnd, NativeMethods.SW_RESTORE);
+                NativeMethods.SetForegroundWindow(hwnd);
+                Log.Write("input", $"  已激活 {process.ProcessName} (pid={process.Id})");
+                return;
+            }
+            catch (Exception exception)
+            {
+                Log.Write("input", $"  激活 {exe} 失败：{exception.GetType().Name}");
+            }
+            finally
+            {
+                process.Dispose();
+            }
+        }
+
+        Log.Write("input", $"  没有找到带窗口的 {exe} 进程 ⇒ 不启动新实例 ✓");
     }
 
     private void OnSeekRequested(double ratio)

@@ -62,6 +62,42 @@ public static class SourceNames
         return Trim(sourceId);
     }
 
+    /// <summary>
+    /// 从 SMTC 的 `SourceAppUserModelId` 取出**可执行文件名**（不带 `.exe` ✓，给 `Process.GetProcessesByName` 用 ✓）。
+    /// 例：`cloudmusic.exe` → `cloudmusic`；`QQMusic.exe` → `QQMusic`
+    /// UWP 包（`Foo.Bar_hash!Foo.Bar`）没有可激活的独立 exe ⇒ 返回 null ✓
+    /// 解析不出来也返回 null ✓ —— 调用方据此**跳过**（用户要求"打开已运行的，不是新开"✓ 所以绝不启动新实例 ✗）
+    /// </summary>
+    public static string? ExecutableName(string sourceId)
+    {
+        if (string.IsNullOrWhiteSpace(sourceId))
+        {
+            return null;
+        }
+
+        string id = sourceId.Trim();
+
+        // UWP 包：`Microsoft.ZuneMusic_8wekyb3d8bbwe!Microsoft.ZuneMusic`
+        // 它跑在 ApplicationFrameHost 里，没有"自己的窗口"可激活 ⇒ 交给调用方跳过 ✓
+        if (id.Contains('!'))
+        {
+            return null;
+        }
+
+        int underscore = id.IndexOf('_');
+        if (underscore > 0)
+        {
+            id = id[..underscore];     // 去掉 AUMID 的哈希后缀
+        }
+
+        if (id.EndsWith(".exe", StringComparison.OrdinalIgnoreCase))
+        {
+            id = id[..^4];
+        }
+
+        return id.Length == 0 ? null : id;
+    }
+
     private static string Trim(string value)
     {
         string result = value;

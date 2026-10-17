@@ -1,5 +1,43 @@
 # RyuBar 变更日志
 
+## [0.8.44 · 阶段 A] 歌词区单击 / 双击
+
+用户："双击歌词后快速打开当前播放源应用（是当前已运行的，不是打开新的软件）；
+单击后在 bar 的上方调出二级菜单：进度条、音量调节（单应用）"
+
+拆分三轮：**A 单击/双击区分 + 双击激活**（本轮 ✓）→ B 二级菜单浮层 → C 单应用音量 ✓
+
+### 单击 / 双击的区分
+
+```csharp
+// WPF 的 MouseButtonEventArgs 自带 ClickCount ✓ 不用自己算间隔 ✗
+if (e.ClickCount >= 2) { _lyricClickTimer?.Stop(); LyricDoubleClicked?.Invoke(); }
+else                   { 启动 320ms 定时器；到期发 LyricClicked }
+```
+
+**为什么单击要延迟 320ms**：不延迟的话，双击时第一次按下就已经发出单击 ⇒ 菜单会先弹一下再被双击关掉，很脏 ✓
+连点会**重新计时**（`Stop()` 再 `Start()`）✓ 只有真正"单击"时才发事件 ✓
+
+### 双击激活播放源
+
+```
+Source = SMTC 的 AppUserModelId（如 cloudmusic.exe）
+→ SourceNames.ExecutableName() 取出进程名（不带 .exe）
+    · 含 '!' 的是 UWP 包（跑在 ApplicationFrameHost 里，没有自己的窗口）⇒ 返回 null ✓
+    · 其余去掉 _hash 后缀和 .exe ✓
+→ Process.GetProcessesByName(exe) → 挑 MainWindowHandle != 0 的
+→ ShowWindow(SW_RESTORE) 还原最小化 + SetForegroundWindow 前置
+→ 找不到就**什么都不做** ✓（用户明确要求"不是打开新的软件"✓ 所以绝不启动新实例 ✗）
+```
+
+### 本轮范围
+
+```
+已完成  单击/双击区分、双击激活播放源
+待做    单击 → 二级菜单（B）、菜单里的进度条（B）、单应用音量（C）
+        单击当前只写日志 ✓ 菜单本体是 B 的事 ✓
+```
+
 ## [0.8.43] — 没有音源时的空闲态：只留音符占位
 
 用户："在没有音源时封面图以一个音符图标占位，同时不显示歌词、进度条、上下首播放键" ✓

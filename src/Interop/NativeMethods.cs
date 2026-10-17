@@ -66,6 +66,9 @@ public static class NativeMethods
     public const int SW_HIDE = 0;
     public const int SW_SHOWNOACTIVATE = 4;
 
+    /// <summary>还原被最小化的窗口并激活它（歌词双击激活播放源用 ✓）。</summary>
+    public const int SW_RESTORE = 9;
+
     public const uint EVENT_OBJECT_CREATE = 0x8000;
     public const uint EVENT_OBJECT_LOCATIONCHANGE = 0x800B;
     public const uint WINEVENT_OUTOFCONTEXT = 0x0000;
@@ -116,6 +119,10 @@ public static class NativeMethods
 
     [DllImport("user32.dll", SetLastError = true)]
     public static extern bool ShowWindow(IntPtr hWnd, int cmd);
+
+    /// <summary>把窗口提到前台（歌词双击激活播放源用 ✓）。系统可能因前台锁而拒绝 ✓ 调用方不必强求。</summary>
+    [DllImport("user32.dll")]
+    public static extern bool SetForegroundWindow(IntPtr hWnd);
 
     [DllImport("user32.dll")]
     public static extern bool IsWindowVisible(IntPtr hWnd);
