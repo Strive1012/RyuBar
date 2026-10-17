@@ -316,14 +316,21 @@ public sealed class BarView : FrameworkElement
         return Math.Max(0.5, Math.Min(ArtRadius, Math.Min(ring.Width, ring.Height) / 2));
     }
 
-    /// <summary>条状进度是否真的画：要同时满足"曲目有时间轴"与"用户开了条状"。</summary>
-    private bool ShowBarProgress => _snapshot.CanShowProgress && _barProgress;
+    /// <summary>
+    /// 空闲态：**连媒体会话都没有**（没有音源 ✓）。
+    /// 用户要求这种状态下"封面用音符图标占位，且不显示歌词 / 进度条 / 上下首与播放键" ✓
+    /// ⇒ 条子收成只有封面大小的一小块 ✓
+    /// </summary>
+    private bool IsIdle => !_snapshot.HasSession;
+
+    /// <summary>条状进度是否真的画：要同时满足"有音源 + 曲目有时间轴 + 用户开了条状"。</summary>
+    private bool ShowBarProgress => !IsIdle && _snapshot.CanShowProgress && _barProgress;
 
     /// <summary>时间是否画：与条状进度**绑定**（用户要求：一起出现、一起消失）。</summary>
-    private bool ShowTimeText => _snapshot.CanShowProgress && _barProgress;
+    private bool ShowTimeText => !IsIdle && _snapshot.CanShowProgress && _barProgress;
 
-    /// <summary>环形进度是否真的画：要同时满足"曲目有时间轴"与"用户开了环形"。</summary>
-    private bool ShowRingProgress => _snapshot.CanShowProgress && _ringProgress;
+    /// <summary>环形进度是否真的画：要同时满足"有音源 + 曲目有时间轴 + 用户开了环形"。</summary>
+    private bool ShowRingProgress => !IsIdle && _snapshot.CanShowProgress && _ringProgress;
 
     /// <summary>每帧现算的播放进度（0~1）；拖动中优先用拖动值。</summary>
     private double CurrentRatio()
@@ -838,6 +845,14 @@ public sealed class BarView : FrameworkElement
             }
         }
 
+        // ★ 没有音源（空闲态）：文字区宽度归 0 ✗ 条子收缩到"只有封面"✓
+        //   必须放在**所有文字宽度计算之后** ✗ 否则会被上面的歌词分支覆盖回去 ✓
+        //   用户要求：这种状态只用音符图标占位，不显示歌词/进度条/上下首与播放键 ✓
+        if (IsIdle)
+        {
+            textWidth = 0;
+        }
+
         // 其余部件（封面 / 按钮 / 进度条 / 时间 / 留白）的总宽 —— 与文字区宽度无关。
         // 按用户开关累加：三个开关任意组合都要能用，所以宽度必须跟着变。
         double rightParts = 0;
@@ -947,15 +962,17 @@ public sealed class BarView : FrameworkElement
         }
 
         // 频谱排在"文字区"和"按钮组"之间（用户要求：频谱在歌词右侧 ✓）
+        // ★ 空闲态不画频谱 ✓（没有音源时它全是 0，白占位置 ✓）
         double spectrumWidth = SpectrumWidth * _contentScale;
-        if (_spectrum)
+        if (_spectrum && !IsIdle)
         {
             side.SpectrumX = x - spectrumWidth;
             x = side.SpectrumX;
             side.ShowSpectrum = true;
         }
 
-        if (_showControls)
+        // ★ 空闲态不画控制按钮 ✓（用户要求：不显示上下首与播放键 ✓）
+        if (_showControls && !IsIdle)
         {
             side.NextX = x - ((side.ShowTime || side.ShowProgress || side.ShowSpectrum ? _progressGap : 0) + _buttonSize);
             side.PlayX = side.NextX - _buttonGap - _buttonSize;
@@ -1123,6 +1140,14 @@ public sealed class BarView : FrameworkElement
         //   代价：动画期间文字的裁剪宽度停在上一次的值 ✓ 220ms 内看不出来 ✓ 动画一结束立刻恢复 ✓
         layout.Title.MaxTextWidth = textWidth;
         layout.Artist.MaxTextWidth = textWidth;
+
+        // ★ 空闲态（没有音源）：**只画封面**（音符占位）✗
+        //   用户要求：不显示歌词、进度条、上下首与播放键 ✓
+        //   标题/歌手也不画 ✓ —— 否则会显示"没有正在播放的媒体"这类占位文字 ✗ 条子收不干净 ✓
+        if (IsIdle)
+        {
+            return;   // 封面已经在上面画好了 ✓ 其余一律不画 ✓
+        }
 
         // 有歌词就画歌词（当前行 + 下一句），否则画标题/歌手
         // ★ 换句时**向上滚动一行**（用户："改成向下滚动来切换到下句歌词，这样看着也更合理" ✓）
@@ -1808,7 +1833,8 @@ public sealed class BarView : FrameworkElement
         //   播放中 → 跟随悬停 ✓（常态保持干净 ✗ 不挂图标）
         //   已暂停 → **常驻**显示 ▶ ✓（一眼就能看出"现在没在放"✓ 也让"点它继续"变得显然 ✓）
         //   注意：放大和高亮仍然只跟 hover ✓ 暂停时封面不会变大 ✓（用户只要求图标反馈 ✓）
-        double glyphAlpha = _snapshot.IsPlaying ? hover : 1.0;
+        //   ★ 空闲态（没有音源）不给图标 ✗ —— 此时只有音符占位，再叠个播放三角就是误导 ✓
+        double glyphAlpha = IsIdle ? 0.0 : (_snapshot.IsPlaying ? hover : 1.0);
 
         if (glyphAlpha > 0.001)
         {
