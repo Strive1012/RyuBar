@@ -160,7 +160,7 @@ public sealed class LyricsSettings
     /// 歌词对齐：left / center / right。
     /// 只在"这一行短于文字区、不需要滚动"时生效；长行进入跑马灯时总是从左边开始（此时对齐无意义）。
     /// </summary>
-    public string Alignment { get; set; } = "left";
+    public string Alignment { get; set; } = "center";
 
     /// <summary>
     /// 歌词/文字区字号倍率（百分比，80~150）。
@@ -172,7 +172,7 @@ public sealed class LyricsSettings
     /// 封面大小（百分比，60~125：上限由条子高度反推，保证不会被裁 ✓）。**与字号完全独立** ✓（用户要求分开设置 ✓）
     /// 100% = 与两行歌词等高（即原来的对齐外观 ✓）→ 所以默认值不会改变现有观感 ✓
     /// </summary>
-    public int ArtSizePercent { get; set; } = 100;
+    public int ArtSizePercent { get; set; } = 110;
 
     public void Normalize()
     {
@@ -280,13 +280,13 @@ public sealed class BarSettings
     public int MinimumWidthDip { get; set; } = 320;
 
     /// <summary>环形进度：绕在专辑图外圈的一圈进度。</summary>
-    public bool RingProgress { get; set; }
+    public bool RingProgress { get; set; } = true;
 
     /// <summary>条状进度：原来的横向细条。</summary>
-    public bool BarProgress { get; set; } = true;
+    public bool BarProgress { get; set; } = false;
 
     /// <summary>控制按钮：上一首 / 播放暂停 / 下一首。</summary>
-    public bool ShowControls { get; set; } = true;
+    public bool ShowControls { get; set; } = false;
 
     /// <summary>环形进度上可以按住拖动跳转（仅显示环形进度时有效）。</summary>
     public bool RingSeek { get; set; } = true;
@@ -306,13 +306,13 @@ public sealed class BarSettings
     /// 上限 6：实测 8 DIP 会把封面的圆角盖掉 ✗，6 是"再粗就吃掉封面"的临界 ✓。
     /// 轨道按它的 55% 画 ✓（保持"已播更突出"的层次 ✓）
     /// </summary>
-    public int RingThicknessDip { get; set; } = 3;
+    public int RingThicknessDip { get; set; } = 2;
 
     /// <summary>
     /// 媒体条**背景面板**的不透明度（0~100 %）。0 = 完全透明（只剩内容浮在任务栏上 ✓）。
     /// 只影响面板本身 ✓ 封面/文字/按钮始终实心 ✓ —— 参照 AFM 的观感 ✓
     /// </summary>
-    public int BackgroundOpacity { get; set; } = 100;
+    public int BackgroundOpacity { get; set; } = 0;
 
     /// <summary>频谱：在歌词右侧显示一排频谱柱。</summary>
     public bool Spectrum { get; set; } = true;
