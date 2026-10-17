@@ -516,7 +516,7 @@ public sealed class ServicePanel : Window
         //   必须改 Path.Data 才会真的换图标 ✓
         //   （三元表达式不能直接调用 ✗ 先取到委托再调 ✓）
         Func<Rect, Geometry> playPauseGlyph = snapshot.IsPlaying ? Glyph.Pause : Glyph.Play;
-        _playPauseGlyph.Data = playPauseGlyph(new Rect(0, 0, 20, 20));
+        _playPauseGlyph.Data = playPauseGlyph(new Rect(0, 0, 24, 24));
         _previous.IsEnabled = snapshot.CanPrevious;
         _playPause.IsEnabled = snapshot.CanPlayPause;
         _next.IsEnabled = snapshot.CanNext;
@@ -647,7 +647,7 @@ public sealed class ServicePanel : Window
         "<ControlTemplate TargetType='Button'" +
         " xmlns='http://schemas.microsoft.com/winfx/2006/xaml/presentation'" +
         " xmlns:x='http://schemas.microsoft.com/winfx/2006/xaml'>" +
-        "<Border x:Name='bg' Background='Transparent' CornerRadius='20'>" +
+        "<Border x:Name='bg' Background='Transparent' CornerRadius='23'>" +
         "<ContentPresenter HorizontalAlignment='Center' VerticalAlignment='Center'/>" +
         "</Border>" +
         "<ControlTemplate.Triggers>" +
@@ -674,9 +674,13 @@ public sealed class ServicePanel : Window
     {
         Path path = new()
         {
-            Data = glyph(new Rect(0, 0, 20, 20)),
+            Data = glyph(new Rect(0, 0, 24, 24)),
             Fill = PrimaryText,
-            Stretch = Stretch.None,
+            Width = 24,
+            Height = 24,
+            // ★ 必须 Uniform 拉伸 + 固定尺寸 ✗ 否则几何自带的宽高和 Border 不一致
+            //   ⇒ 圆心在 Border 中点、图标却按自己左上角排 ⇒ 看起来"高亮不居中"✓（用户实测 ✓）
+            Stretch = Stretch.Uniform,
             HorizontalAlignment = HorizontalAlignment.Center,
             VerticalAlignment = VerticalAlignment.Center,
         };
