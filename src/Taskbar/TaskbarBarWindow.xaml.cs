@@ -1321,6 +1321,43 @@ public partial class TaskbarBarWindow : Window
         return null;
     }
 
+    /// <summary>托盘菜单：列出所有 SMTC 来源（标记当前选中的 ✓）。</summary>
+    private IReadOnlyList<(string Label, bool Selected, Action Invoke)> ListTraySources()
+    {
+        List<(string, bool, Action)> items = new();
+        foreach (Media.MediaSourceOption option in _media.CurrentSources())
+        {
+            string key = option.Key;
+            items.Add((
+                option.DisplayName + (option.IsPlaying ? "  ▶" : ""),
+                option.IsSelected,
+                () =>
+                {
+                    if (_media.SelectSource(key))
+                    {
+                        Log.Write("input", $"托盘切换来源 → {key}");
+                    }
+                }));
+        }
+        return items;
+    }
+
+    /// <summary>托盘菜单：重新连接 SMTC ✓</summary>
+    private void ReconnectSmtcFromTray()
+    {
+        _ = _media.RestartAsync();
+    }
+
+    /// <summary>
+    /// 托盘菜单：重新加载任务栏媒体栏 ✓
+    /// 走既有的 RaiseInvalidated 通道 —— App 层会重建整个条子窗口（连同托盘图标）✓
+    /// </summary>
+    private void ReloadBarFromTray()
+    {
+        Log.Write("app", "重新加载任务栏媒体栏（托盘命令）");
+        RaiseInvalidated("tray-reload");
+    }
+
     /// <summary>当前应用音量（0..1）—— 面板滑块显示用 ✓ 真正生效靠 _appVolumeControl ✓。</summary>
     private double _appVolume = 1.0;
 
@@ -2013,7 +2050,12 @@ public partial class TaskbarBarWindow : Window
         if (msg == Interop.TrayIcon.CallbackMessage)
         {
             handled = true;
-            _tray?.HandleMessage((int)lParam, OpenSettingsFromTray, ExitFromTray);
+            _tray?.HandleMessage((int)lParam, new Interop.TrayIcon.TrayActions(
+                OpenSettingsFromTray,
+                ExitFromTray,
+                ListTraySources,
+                ReconnectSmtcFromTray,
+                ReloadBarFromTray));
             return IntPtr.Zero;
         }
 

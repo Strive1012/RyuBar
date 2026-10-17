@@ -29,6 +29,13 @@ public sealed class TrayIcon : IDisposable
     private const int NIF_ICON = 0x00000002;
     private const int NIF_TIP = 0x00000004;
 
+    private const int MF_SEPARATOR = 0x800;
+    private const int MF_CHECKED = 0x8;
+    private const int MF_GRAYED = 0x1;
+    private const int MF_POPUP = 0x10;
+    private const int CMD_RECONNECT_SMTC = 1003;
+    private const int CMD_RELOAD_BAR = 1004;
+    private const int CMD_SOURCE_BASE = 2000;
     private const int CMD_SETTINGS = 1;
     private const int CMD_EXIT = 2;
 
@@ -104,24 +111,32 @@ public sealed class TrayIcon : IDisposable
     }
 
     /// <summary>宿主收到 <see cref="CallbackMessage"/> 时调用；返回 true 表示已处理。</summary>
-    public bool HandleMessage(int msg, Action openSettings, Action exit)
+    public bool HandleMessage(int msg, TrayActions actions)
     {
         switch (msg)
         {
             case WM_LBUTTONDBLCLK:
-                openSettings();
+                actions.OpenSettings();
                 return true;
             case WM_LBUTTONUP:
                 return true;   // 单击不做事（避免误触）
             case WM_RBUTTONUP:
-                ShowMenu(openSettings, exit);
+                ShowMenu(actions);
                 return true;
             default:
                 return false;
         }
     }
 
-    private void ShowMenu(Action openSettings, Action exit)
+    /// <summary>托盘菜单对外暴露的动作（用户要求新增前三项 ✓）。</summary>
+    public sealed record TrayActions(
+        Action OpenSettings,
+        Action Exit,
+        Func<IReadOnlyList<(string Label, bool Selected, Action Invoke)>> ListSources,
+        Action ReconnectSmtc,
+        Action ReloadBar);
+
+    private void ShowMenu(TrayActions actions)
     {
         IntPtr menu = CreatePopupMenu();
         if (menu == IntPtr.Zero)
@@ -131,6 +146,35 @@ public sealed class TrayIcon : IDisposable
 
         try
         {
+            // ★ 三项新功能（用户要求 ✓ 参考 AFM 的托盘菜单 ✓）
+            //   ① 切换媒体源 → 子菜单列出当前所有 SMTC 会话 ✓
+            //   ② 重新连接 SMTC → 重建会话管理器（播放器换了/卡住时用 ✓）
+            //   ③ 重新加载任务栏媒体栏 → 重建条子窗口 ✓
+            IReadOnlyList<(string Label, bool Selected, Action Invoke)> sources = actions.ListSources();
+            IntPtr sourceMenu = CreatePopupMenu();
+            if (sourceMenu != IntPtr.Zero && sources.Count > 0)
+            {
+                // 子菜单项用 2000+ 的 id 段，和固定命令错开 ✓
+                for (int i = 0; i < sources.Count; i++)
+                {
+                    int flags = MF_STRING | (sources[i].Selected ? MF_CHECKED : 0);
+                    _ = AppendMenu(sourceMenu, flags, (int)(CMD_SOURCE_BASE + i), sources[i].Label);
+                }
+                _ = AppendMenu(menu, MF_STRING | MF_POPUP, sourceMenu.ToInt32(), "切换媒体源");
+            }
+            else
+            {
+                _ = AppendMenu(menu, MF_STRING | MF_GRAYED, 0, "切换媒体源（无可用来源）");
+                if (sourceMenu != IntPtr.Zero)
+                {
+                    _ = DestroyMenu(sourceMenu);
+                }
+            }
+
+            _ = AppendMenu(menu, MF_SEPARATOR, 0, null);
+            _ = AppendMenu(menu, MF_STRING, CMD_RECONNECT_SMTC, "重新连接 SMTC");
+            _ = AppendMenu(menu, MF_STRING, CMD_RELOAD_BAR, "重新加载任务栏媒体栏");
+            _ = AppendMenu(menu, MF_SEPARATOR, 0, null);
             _ = AppendMenu(menu, MF_STRING, CMD_SETTINGS, "设置");
             _ = AppendMenu(menu, MF_STRING, CMD_EXIT, "退出 RyuBar");
 
@@ -150,13 +194,29 @@ public sealed class TrayIcon : IDisposable
                 _hwnd,
                 IntPtr.Zero);
 
+            if (command >= CMD_SOURCE_BASE)
+            {
+                int index = command - CMD_SOURCE_BASE;
+                if (index >= 0 && index < sources.Count)
+                {
+                    sources[index].Invoke();
+                }
+                return;
+            }
+
             switch (command)
             {
+                case CMD_RECONNECT_SMTC:
+                    actions.ReconnectSmtc();
+                    break;
+                case CMD_RELOAD_BAR:
+                    actions.ReloadBar();
+                    break;
                 case CMD_SETTINGS:
-                    openSettings();
+                    actions.OpenSettings();
                     break;
                 case CMD_EXIT:
-                    exit();
+                    actions.Exit();
                     break;
             }
         }

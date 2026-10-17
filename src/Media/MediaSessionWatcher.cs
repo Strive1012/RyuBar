@@ -88,6 +88,18 @@ public sealed class MediaSessionWatcher : IDisposable
         _ = InitializeAsync();
     }
 
+    /// <summary>
+    /// 重新连接 SMTC（用户要求：托盘的"重新连接 SMTC"✓）。
+    /// 播放器换过、或被别的东西把会话管理器搞坏时，重建一次通常就好了 ✓
+    /// 不清 _manualSourceKey：用户的来源选择应该保留 ✓
+    /// </summary>
+    public async Task RestartAsync()
+    {
+        Log.Write("media", "重新连接 SMTC（托盘命令）");
+        _manager = null;
+        await InitializeAsync();
+    }
+
     private async Task InitializeAsync()
     {
         try
