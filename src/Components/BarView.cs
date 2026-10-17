@@ -1131,9 +1131,16 @@ public sealed class BarView : FrameworkElement
             return;
         }
 
-        Rect outer = new(0.5, 0.5, w - 1, h - 1);
-        double radius = Math.Min(8, h / 2);
-        dc.DrawRoundedRectangle(_chipBackground, _chipBorder, outer, radius, radius);
+        // ★ 空闲态（没有音源）**不画背景面板与描边** ✗
+        //   用户："我想要的是没有周围的黑色填充，只显示干净的图标"✓
+        //   条子是分层窗口 ✓ 不画背景 ⇒ 完全透明 ⇒ 只剩那个音符 ✓
+        //   （背景不透明度是设置项 ✓ 但空闲时它没有存在的意义 —— 那时条子里除了音符什么都没有 ✗）
+        if (!IsIdle)
+        {
+            Rect outer = new(0.5, 0.5, w - 1, h - 1);
+            double radius = Math.Min(8, h / 2);
+            dc.DrawRoundedRectangle(_chipBackground, _chipBorder, outer, radius, radius);
+        }
 
         BarLayout layout = ComputeLayout();
         RightSide side = ComputeRightSide(w, layout.TimeWidth);
