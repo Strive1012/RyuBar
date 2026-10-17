@@ -323,6 +323,7 @@ public sealed class ServicePanel : Window
         body.Children.Add(volumeBlock);
 
         shell.Child = body;
+        _slideHost = shell;   // 位移变换挂这里（Window 上不行 ✓）
         Content = shell;
 
         // 点面板外就关 —— 但**刚显示的 400ms 内要忽略** ✗
@@ -420,6 +421,7 @@ public sealed class ServicePanel : Window
 
     /// <summary>面板内容的根元素（做位移用 ✓ 整窗缩放会让圆角模糊 ✓）。</summary>
     private TranslateTransform? _slide;
+    private Border? _slideHost;
     private DispatcherTimer? _animTimer;
 
     /// <summary>
@@ -429,17 +431,24 @@ public sealed class ServicePanel : Window
     /// </summary>
     private void PlayOpenAnimation()
     {
-        if (_slide is null)
-        {
-            _slide = new TranslateTransform(0, 12);
-            RenderTransform = _slide;
-        }
-        else
-        {
-            _slide.Y = 12;
-        }
-
+        // ★ 变换必须设在**内容根元素**上 ✗ 不能设在 Window 上 ✓
+        //   WPF 的 Window 是顶层 HWND 根元素，没有父级变换
+        //   对它设 RenderTransform 会抛 InvalidOperationException("转换对于 Window 无效")
+        //   —— 这个异常会把 ShowAbove 整个中断掉 ⇒ 面板根本不显示 ✓（用户实测"前两次点不出来"✓）
+        EnsureSlideTransform();
+        _slide!.Y = 12;
         AnimateTo(1.0, 0.0, 180);
+    }
+
+    /// <summary>把位移变换挂到内容 Border 上（只挂一次 ✓）。</summary>
+    private void EnsureSlideTransform()
+    {
+        if (_slide is not null)
+        {
+            return;
+        }
+        _slide = new TranslateTransform(0, 0);
+        _slideHost.RenderTransform = _slide;
     }
 
     /// <summary>关闭动画：淡出 + 下沉 12 DIP，结束后才真正 Hide ✓。</summary>
@@ -715,9 +724,11 @@ public sealed class ServicePanel : Window
             ToolTip = tip,
             Content = new Path
             {
-                Data = glyph(new Rect(0, 0, 20, 20)),
+                Data = glyph(new Rect(0, 0, 24, 24)),
                 Fill = PrimaryText,
-                Stretch = Stretch.None,
+                Width = 24,
+                Height = 24,
+                Stretch = Stretch.Uniform,
                 HorizontalAlignment = HorizontalAlignment.Center,
                 VerticalAlignment = VerticalAlignment.Center,
             },
