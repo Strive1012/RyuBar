@@ -411,14 +411,14 @@ public sealed class BarView : FrameworkElement
 
     /// <summary>
     /// 封面中心播放/暂停图标的圆底。
-    /// ★ 用**白色**而不是黑色 ✗：实测黑底+白图标在暗色封面上几乎看不见 ✓
-    ///   （用户给的参考图里那首歌的封面就是深色键盘图 ✓ 图标完全糊掉 ✗）
-    ///   白底 + 深色图标在任何封面上都清晰 ✓
+    /// ★ 用**淡黑**+白图标 ✗ 不用白底黑图标 ✓
+    ///   （白底太抢眼，像在封面上贴了块白膏药 ✗ —— 用户明确反馈"按钮太丑"✓）
+    ///   淡黑半透明圆 + 白图标是最克制的做法 ✓ 和右侧控制按钮的观感也统一 ✓
     /// </summary>
-    private static readonly Brush ArtGlyphBackdrop = Freeze(new SolidColorBrush(Color.FromArgb(0xD8, 0xFF, 0xFF, 0xFF)));
+    private static readonly Brush ArtGlyphBackdrop = Freeze(new SolidColorBrush(Color.FromArgb(0x80, 0x00, 0x00, 0x00)));
 
-    /// <summary>封面中心图标颜色（近黑 ✓ 配白底 ✓）。</summary>
-    private static readonly Brush ArtGlyphBrush = Freeze(new SolidColorBrush(Color.FromRgb(0x16, 0x16, 0x16)));
+    /// <summary>封面中心图标颜色（白色 ✓ 配淡黑圆底 ✓）。</summary>
+    private static readonly Brush ArtGlyphBrush = Freeze(new SolidColorBrush(Color.FromRgb(0xFF, 0xFF, 0xFF)));
 
     private Media.MediaSnapshot _snapshot = Media.MediaSnapshot.Empty;
     private BarHit _hover = BarHit.None;
@@ -1806,24 +1806,17 @@ public sealed class BarView : FrameworkElement
 
         if (hover > 0.001)
         {
-            // 高亮描边（accent 色 ✓ 随 hover 渐显 ✓）
-            Pen pen = new(AccentBrush, 1.6) { StartLineCap = PenLineCap.Round, EndLineCap = PenLineCap.Round };
-            dc.PushOpacity(hover);
-            dc.DrawRoundedRectangle(null, pen, Rect.Inflate(drawn, 0.8, 0.8), radius + 0.8, radius + 0.8);
-            dc.Pop();
-        }
-
-        if (hover > 0.001)
-        {
             // ★ 中心按钮：播放中显示 ⏸（点了会暂停 ✓）、已暂停显示 ▶（点了会播放 ✓）
             //   语义 = "点下去会发生什么" ✓ 和右侧控制按钮一致 ✓
-            double size = drawn.Height * 0.46;
+            //   样式：淡黑半透明圆底 + 白色图标 ✓ 刻意做小（0.36）× 淡（圆底 0.76）✓
+            //   —— 用户反馈"按钮太丑"✓ 上一版是「白圆底 + 黑图标」又大又抢眼 ✗
+            double size = drawn.Height * 0.38;
             double cx0 = drawn.X + (drawn.Width / 2);
             double cy0 = drawn.Y + (drawn.Height / 2);
             Rect glyphBox = new(cx0 - (size / 2), cy0 - (size / 2), size, size);
 
             dc.PushOpacity(hover);
-            dc.DrawEllipse(ArtGlyphBackdrop, null, new Point(cx0, cy0), size * 0.95, size * 0.95);
+            dc.DrawEllipse(ArtGlyphBackdrop, null, new Point(cx0, cy0), size * 0.76, size * 0.76);
             Geometry glyph = _snapshot.IsPlaying ? Glyph.Pause(glyphBox) : Glyph.Play(glyphBox);
             dc.DrawGeometry(ArtGlyphBrush, null, glyph);
             dc.Pop();
