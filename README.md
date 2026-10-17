@@ -1,169 +1,197 @@
 # RyuBar
 
-Windows 10/11 任务栏媒体条与歌词 —— **自研实现**。
+把媒体条放进 Windows 任务栏。封面、歌词、频谱、进度，一眼看到在放什么。
 
-参照物是 AF Media Bar 的**外观风格与交互**（它的设计令牌、行为规格是我做外观对齐时的依据），
-但**代码全部是自己写的**：任务栏宿主、媒体通道、渲染、歌词引擎都不复制任何第三方项目源码。
-
----
-
-## 现状
-
-| 阶段 | 内容 | 状态 |
-|---|---|---|
-| **1** | **任务栏宿主骨架**：子窗口化、区域穿透、UI Automation 占用探测、运动冻结、自动隐藏跟随 | ✅ 已完成，真机 6/6 通过 |
-| **2** | **媒体与交互**：SMTC 会话/快照/位置插值、播放/暂停/上下首/跳转、点击/滚轮/悬停、内容自适应宽度 | ✅ 完成 |
-| 3 | 外观对齐：设计令牌 → 胶囊/描边/顶部高光/模糊封面材质/悬停色板/封面进度环/长标题滚动 | 待开始 |
-| **5a** | **内存适配器（提前做）**：网易云的真实进度（内存自校准扫描）+ 真实时长（客户端本地 JSON）+ 跳转真实性验证 | ✅ 完成 |
-| 5b | 其他内存适配器（酷狗用指针链）、歌词、频谱 | 待开始 |
-| 4 | 歌词：WebView2 宿主 + 逐字高亮前端 + 取词（Lyricify 公开库） | 待开始 |
-| 5 | 其余功能：曲目切换通知 / 频谱 / 读内存适配 / 更新器 | 待开始 |
-| 6 | 设置界面 + 打包 | 待开始 |
+**自研实现**：任务栏宿主、媒体通道、渲染、歌词引擎、频谱分析全部自己写。
+设计上参考过 [AF Media Bar](https://github.com/Fervent-Tempo/AF-Media-Bar) 的外观与交互，但**代码一行没有复制**。
 
 ---
 
-## 阶段 1 做了什么
+## 功能
 
-1. **变成任务栏的子窗口**：`WS_POPUP → WS_CHILD` + `SetParent(Shell_TrayWnd)`，
-   宿主铺满整条任务栏**客户区**（坐标一律用父窗口客户区原点，避免任务栏移动时的坐标漂移）。
-2. **区域穿透**：`SetWindowRgn` 只把"媒体条那一块"设成可命中，其余像素完全让给任务栏 ——
-   任务栏图标照常可点、开始菜单照常可开。
-3. **占用区探测**：UI Automation（跑在专用 MTA 线程，队列只留最新请求）把任务栏上已有的元素量出来，
-   过滤掉本进程窗口，交给纯策略 `RangePolicy` 挑出左侧空闲区。
-4. **运动冻结**：任务栏滑入滑出时什么都不做，**连续两次采样一致**才一次性落定几何与区域。
-5. **自动隐藏跟随 + 淡入**：任务栏隐藏时**不隐藏宿主**（它跟着父窗口一起离屏，只把透明度归零），
-   任务栏露出的那一帧开始 **150 ms 线性淡入** —— 时长是按实测对齐的（见下面"测量工具"）。
-   隐藏期间采样周期提到 10 ms，才能在同帧起淡入。
-6. **Explorer 重启恢复**：监听 `TaskbarCreated`；更关键的是——杀 Explorer 会**连带销毁**我们的子窗口
-   （条挂在任务栏下面），所以宿主会通知持有方**重建窗口**（`HostInvalidated` → App 在下一帧重建），
-   实测从旧宿主死亡到重新挂上约 **0.3 秒**。
+| | |
+|---|---|
+| **媒体条** | 贴在任务栏上的胶囊，内容自适应宽度，任务栏空档不够时自动压缩 |
+| **封面** | 悬停放大 + 高亮 + 中心按钮；单击播放/暂停；暂停时常驻播放图标 |
+| **歌词** | 双行显示、逐字高亮（有逐字数据时）、长句跑马灯、自动取词（QQ音乐 / 网易云 / 跨来源兜底） |
+| **频谱** | WASAPI 环回采集 + 自写 FFT，柱数 4~16 可调 |
+| **进度** | 环形或条状，可拖动跳转；播放器不支持跳转时显示为禁用态 |
+| **二级面板** | 单击歌词弹出：大封面、进度、控制键、**输出设备切换**、**单应用音量** |
+| **切歌通知** | 换歌时弹出封面 + 曲名 |
+| **托盘菜单** | 切换媒体源、重新连接 SMTC、重新加载条子 |
+
+**媒体条上的每一项都可以在设置里单独开关**，全关掉也能用。
+
+---
+
+## 安装
+
+**解压即用，不需要装 .NET 运行时。**
+
+1. 从 [Releases](../../releases) 下载 `RyuBar-1.0.0.zip`
+2. 解压，双击 `RyuBar.exe`
+3. 媒体条出现在任务栏，托盘出现图标
+
+大于 50 MB 是因为**自包含**（.NET 运行时打在里面）。如果你已经装了 .NET 10 Desktop Runtime，可以自己 `dotnet publish` 出约 5 MB 的框架依赖版。
+
+---
+
+## 使用
+
+完整说明见 [使用手册](docs/使用手册.md)。几个最常用的：
+
+```
+单击歌词        弹出二级面板（再点一次收起）
+双击歌词        打开已经在运行的播放器窗口
+单击封面        暂停 / 继续
+拖动进度条      跳转（播放器支持时）
+滚轮            上一首 / 下一首；Ctrl+滚轮 切换声音来源
+右键托盘        切换媒体源 / 重连 SMTC / 重载条子
+```
+
+---
+
+## 技术要点
+
+**WPF / .NET 10**，单进程单 exe。
+
+### 条子为什么能贴在任务栏上
+
+```
+WS_POPUP → WS_CHILD + SetParent(Shell_TrayWnd)
+SetWindowRgn 只把"媒体条那一块"设成可命中，其余像素让给任务栏
+```
+
+代价：条子是子窗口，尺寸被钳在任务栏客户区内 —— **这就是"条子不能比任务栏高"的根本原因**。
+
+### 媒体信息来源
+
+Windows 的 **SMTC**（`GlobalSystemMediaTransportControlsSessionManager`）。
+不注入播放器、不读界面、不猜。所以：
+
+- 播放器不上报时间轴 ⇒ 就没有进度可显示
+- 播放器不支持 seek ⇒ 进度条就置灰
+- 这都不是 bug，是数据源的限制
+
+### 频谱
+
+`NAudio` 做 WASAPI 环回采集（唯一的第三方依赖），**分析层完全自研**：
+Hann 窗 + 512 点 radix-2 FFT + 对数分布 16 频段 + 快起慢落。
+
+### 单应用音量 / 输出设备
+
+- 音量：`IAudioSessionManager2` 按进程 id 找到音频会话，读写 `ISimpleAudioVolume`
+- 输出设备：未文档化的 `IPolicyConfig::SetDefaultEndpoint`（AFM、EarTrumpet 走的都是它）
+
+### 60fps 动画
+
+踩过的坑都记在 [CHANGELOG](CHANGELOG.md) 里，核心三条：
+
+1. **每帧 `SetWindowPos` 带 `SWP_FRAMECHANGED`** 会重建分层窗口表面 ⇒ 帧间隔硬上限 ~22ms。动画必须搬到"内容布局"，窗口宽度一次到位。
+2. **`DispatcherTimer(16ms)` 会被 UI 线程上别的定时器挤后** ⇒ 换成 `CompositionTarget.Rendering`，并限流到 16ms 且跳过时不累加。
+3. **动画的起止必须用同一量纲**（内容 DIP），混用窗口像素会导致"终点与终态不一致 ⇒ 结束跳一下"。
+
+---
+
+## 从源码构建
+
+需要 **.NET 10 SDK**。
+
+```powershell
+git clone https://github.com/Strive1012/RyuBar.git
+cd RyuBar
+
+# 普通构建
+.\build.ps1
+dotnet publish src\RyuBar.csproj -c Release -o dist
+
+# 单文件自包含（分发给别人用这个）
+dotnet publish src\RyuBar.csproj -c Release -r win-x64 --self-contained true `
+  -p:PublishSingleFile=true `
+  -p:IncludeNativeLibrariesForSelfExtract=true `
+  -p:EnableCompressionInSingleFile=true `
+  -o dist-single
+```
+
+---
 
 ## 架构
 
 ```
 src/
-  App.xaml(.cs)                 唯一组合根：单实例、命令行、异常兜底、命名事件退出
-  app.manifest                  PerMonitorV2 + asInvoker（任务栏功能不需要管理员）
+  App.xaml(.cs)                 组合根：单实例、命令行、异常兜底、命名事件退出
+  app.manifest                  PerMonitorV2 + asInvoker
+
   Interop/
-    NativeMethods.cs            用到的全部 Win32 接口（最小集）
+    NativeMethods.cs            Win32 接口（最小集）
+
   Taskbar/
     TaskbarLocator.cs           定位任务栏、客户区/监视器/DPI 采样、隐藏判定
     TaskbarSampler.cs           一次采样的不可变结果
     MotionPolicy.cs             ★纯策略：连续采样 → 在动/稳定
     RangePolicy.cs              ★纯策略：占用区 → 空闲区与落点
     OccupancyProbe.cs           UIA 探测（MTA 线程 + 最新请求队列）
-    TaskbarBarWindow.xaml(.cs)  宿主窗口：挂载、区域、落位、冻结、恢复
+    TaskbarBarWindow.xaml(.cs)  宿主：挂载、区域、落位、冻结、恢复、托盘、面板接线
+
   Components/
-    BarView.cs                  条的内容：自绘 + 内容自适应宽度 + 命中区域
-    Glyph.cs                    传输控件图形（几何，不依赖字体图标）
+    BarView.cs                  条的内容：自绘 + 内容自适应宽度 + 命中判定
+    Glyph.cs                    控件图形（几何，不依赖字体图标）
+
   Media/
     MediaSnapshot.cs            一次媒体快照 + 位置插值（没有时间轴就不外推）
-    MediaSessionWatcher.cs      SMTC 通道：会话/事件/封面/控制指令 + 跳转真实性验证
-    Readers/
-      ModuleMemoryScanner.cs    进程模块内存扫描底座（OpenProcess/VirtualQueryEx/ReadProcessMemory）
-      NetEaseMemoryReader.cs    网易云播放位置：自校准找出"按时间推进的那个 double"
-      NetEaseMetadataIndex.cs   网易云时长：读客户端本地 playingList/fmPlay JSON
-      NetEaseProbe.cs           侦察工具（--diag netease）
+    MediaSessionWatcher.cs      SMTC 通道：会话/事件/封面/控制指令
+    SourceNames.cs              AUMID → 友好名 / 进程名
+    Readers/                    播放器内存适配（网易云精确进度）
+
+  Lyrics/
+    LyricsService.cs            取词与缓存（QQ音乐 / 网易云 / 跨来源兜底）
+    LyricsDiskCache.cs          原始文本与解析结果的两级缓存
+
+  Audio/
+    SpectrumAnalyzer.cs         WASAPI 环回 + 自研 FFT
+    AppVolume.cs                单应用音量（音频会话）
+    AudioDevices.cs             输出设备枚举与切换（IPolicyConfig）
+
+  Menu/
+    ServicePanel.cs             条子上方的二级面板（独立顶层窗口）
+
+  Settings/
+    SettingsWindowTheme.cs      设置窗口（六页，代码构建 UI）
+
+  Configuration/
+    SettingsStore.cs            设置模型与读写
+
   Diagnostics/
     Log.cs                      单文件日志（按大小轮转）
     Diag.cs                     --diag：把整条链路独立跑一遍
-tools/
-  verify-phase1.ps1             阶段 1 验收脚本（可直接重跑，加 -Explorer 测重启恢复）
-  inspect-host.ps1              窗口区域 / 命中归属 / 点击穿透 的人工排查
-  inspect-zorder.ps1            任务栏子窗口的 Z 序（确认我们没被内容桥盖住）
-  bar-click.ps1                 按应用上报的控件矩形**真实点击**条上的控件（play/prev/next/seek）
-  measure-reveal-patches.ps1    ★ 淡入/淡出测量：BitBlt 小块区域 + 亮度均值，约 3 ms 一格
-  measure-reveal.ps1            任务栏窗口矩形的高频采样（证明矩形是跳变而非滑动）
-  measure-reveal-pixels.ps1     单像素列扫描（保留作参考，精度不如 patches 版）
-  burst-reveal.ps1              露出过程连拍拼图（人工目视用）
 ```
 
-★ = 纯策略，不碰任何系统接口，可以单独写单元测试。
+---
 
-## 构建与运行
+## 诊断
 
-```powershell
-powershell -File .\build.ps1                 # Release 构建
-powershell -File .\build.ps1 -Run            # 构建并启动
-powershell -File .\build.ps1 -SelfContained  # 单文件自包含发布到 dist\
-```
-
-```powershell
-RyuBar.exe            # 启动（单实例）
-RyuBar.exe --diag     # 诊断：任务栏几何 / 占用区 / 选点 / 运行中实例状态
-RyuBar.exe --exit     # 让运行中的实例退出
-RyuBar.exe --help
-```
-
-- 日志：`%LOCALAPPDATA%\RyuBar\logs\ryubar.log`
-- 状态：`%LOCALAPPDATA%\RyuBar\state.json`（后端、挂载、条的真实位置尺寸、占用区、探测来源）
-- **设置：`%LOCALAPPDATA%\RyuBar\settings.json`** —— 改完**自动生效**（约 1 秒内读入），不需要重启
-
-### 设置文件（当前只有淡入/淡出）
-
-```json
-{
-  "schemaVersion": 1,
-  "fade": {
-    "fadeInEnabled": true,          // 露出时是否淡入
-    "fadeInMilliseconds": 150,      // 淡入时长
-    "fadeInDelayMilliseconds": 150, // 淡入延后：等任务栏自己的露出动画画完再开始
-    "fadeOutEnabled": true,         // 隐藏时是否淡出
-    "fadeOutMilliseconds": 150      // 淡出时长
-  }
-}
-```
-
-取值都会被收敛到 0–2000 ms；`0` 表示该动作瞬时完成。文件不存在时首次运行会写一份默认值。
-
-> **淡出为什么需要"位移抵消"**：任务栏自动隐藏时，它的窗口矩形是**一步跳到屏幕外**的，条作为子窗口会被一起带走（瞬间消失）。
-> 所以开启淡出后，我们会在隐藏那一瞬间**反向抵消这个位移**，把条按在原位淡出，淡出结束再放回正常位置。
-> 日志里能看到 `淡出开始 150 ms（线性；抵消父窗口位移 70 px）`。
-
-## 阶段 1 验收结果（本机实测）
-
-```
-[PASS] 1. attached and inside the taskbar client area
-        attached=True client=2560x72 bar=(12,9) 630x54 reason=fit
-[PASS] 2. bar does not overlap any taskbar element
-        occupied ranges=13; overlaps=none
-[PASS] 3. hit test - inside is ours, outside is the taskbar
-        inside pid=5884 (ours), outside pid=13720 (explorer)
-[PASS] 4. clicking a taskbar icon (outside the bar) reaches the taskbar
-        foreground pid 0 -> 28260
-[PASS] 5. clicking inside the bar does not steal focus or minimize
-        foreground minimized=False
-[PASS] 6. follows the taskbar auto-hide
-        when taskbar hidden: hidden=True; after reveal: hidden=False
-[PASS] 7. recovers after an Explorer restart            (需要 -Explorer 开关，任务栏会闪一下)
-        taskbar handle 0x304DA -> 0x303AC; state rewritten after the kill=True; bar hit-testable again=True
-summary: 7/7 passed, 0 failed
-```
-
-重跑：`powershell -File .\tools\verify-phase1.ps1`（加 `-Explorer` 会额外做一次 Explorer 重启恢复测试，那一步会让任务栏闪一下）。
-
-## 已知行为与限制
-
-- **滚轮**：光标在条上滚动 = 上一首 / 下一首（上 = 上一首，下 = 下一首），别的窗口不会被误滚。
-  这条依赖系统设置 `HKCU\Control Panel\Desktop\MouseWheelRouting = 2`（设置 → 鼠标 → **悬停即滚动**）。
-  若该设置为 1（只在焦点窗口滚动），滚轮会交给焦点应用而不给条 —— 那种情况下才需要低级鼠标钩子。
-- **点条不会激活任何窗口**：宿主是 `WS_EX_NOACTIVATE` 且吞掉 `WM_MOUSEACTIVATE`。
-  副作用是当前前台窗口会失去焦点（和点任务栏空白处一致），但不会被最小化。
-- **露出时淡入 150 ms（线性）**，并且**延后 150 ms 开始**：任务栏自己的露出动画也在同一时刻跑，
-  我们的逐帧透明度更新会被 DWM 抢占，表现为"淡入中途卡一下、然后跳完"；延后之后曲线恢复平滑。
-  实测中任务栏的"帧"先到、内容约 85 ms 后才开始淡入，所以这个延后让条比图标略晚、但两者不再互相挤。
-  两个参数都在 `TaskbarBarWindow` 顶部：`FadeDelayMilliseconds`、`FadeInMilliseconds`。
-
-### 诊断开关（环境变量，默认关闭）
+排查问题时可以在启动前设环境变量：
 
 | 变量 | 作用 |
 |---|---|
-| `RYUBAR_FADE_TRACE=1` | 把淡入的每一帧时间与透明度写进日志（判断"卡顿是渲染被饿住还是动画没走"） |
-| `RYUBAR_FADE_TEST=900` | 任务栏静止时每 900 ms 重放一次淡入（隔离测量"卡顿是否来自任务栏自身动画"） |
-- **只处理主任务栏**：多显示器的 `Shell_SecondaryTrayWnd`、竖向任务栏留到后续阶段。
-- **占用区探测只认 Explorer 进程的任务栏元素**：第三方覆盖窗口（如 TranslucentTB 的额外层）暂未识别。
-- **空间不足时整条隐藏**（并写日志说明原因），不做压窄到看不见的条。
-- 条的外观目前是阶段 1 的占位胶囊，真正的观感在阶段 3 做。
+| `RYUBAR_LYRIC_TRACE=1` | 歌词滚动的帧率与每帧渲染耗时 |
+| `RYUBAR_WIDTH_TRACE=1` | 宽度缓动死区降到 1px |
+| `RYUBAR_FRAME_TRACE=1` | 每帧输出歌词/宽度关键量（定位抖动、闪） |
+| `RYUBAR_NAV_TRACE=1` | 设置窗口的导航与焦点状态 |
+
+日志：`%LOCALAPPDATA%\RyuBar\logs\ryubar.log`
+
+---
+
+## 已知限制
+
+1. **条子不能比任务栏高** —— 它是 `Shell_TrayWnd` 的子窗口，绘制被裁在任务栏客户区内
+2. **进度/跳转取决于播放器** —— 只上报 SMTC 事件的播放器（网易云、QQ音乐部分版本）没有时间轴
+3. **逐字高亮需要逐字数据** —— QRC 有，纯 LRC 没有。没有时按整行处理，不猜测每个字的时间
+4. **单应用音量依赖音频会话** —— 极少数播放器不上报会话时会无效
+5. **双击歌词对 UWP 应用无效** —— 它们跑在 `ApplicationFrameHost` 里，没有独立窗口可激活
+
+---
 
 ## 许可
 
