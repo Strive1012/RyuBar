@@ -38,7 +38,8 @@ public sealed class ServicePanel : Window
     private static readonly Brush HoverBrush = Frozen(Color.FromArgb(0x1E, 0xFF, 0xFF, 0xFF));
 
     private const double PanelWidth = 520;
-    private const double PanelHeight = 470;   // 加了"输出设备"一行 ⇒ 从 420 提到 470 ✓
+    // ★ 高度**自适应** ✗ 不写死 ✓（用户："菜单无用的空白区域太多"✓）
+    //   写死 470 DIP x 1.5 = 705px，而内容只占一半 ⇒ 下面一大片空白 ✓
     private const double CornerRadius = 14;
 
     private readonly Image _artwork;
@@ -105,7 +106,9 @@ public sealed class ServicePanel : Window
         Topmost = true;
         ResizeMode = ResizeMode.NoResize;
         Width = PanelWidth;
-        Height = PanelHeight;
+        // ★ 高度**自适应** ✗ 不写死 ✓（用户："菜单无用的空白区域太多"✓）
+        //   原来写死 470 DIP ⇒ ×1.5 = 705px，而内容只占一半 ⇒ 下面一大片空白 ✓
+        SizeToContent = SizeToContent.Height;
         FontFamily = new FontFamily("Microsoft YaHei UI");
 
         Border shell = new()
@@ -326,13 +329,13 @@ public sealed class ServicePanel : Window
             {
                 return;
             }
-            Hide();
+            AnimatedHide();
         };
         KeyDown += (_, e) =>
         {
             if (e.Key == System.Windows.Input.Key.Escape)
             {
-                Hide();
+                AnimatedHide();
             }
         };
     }
@@ -351,16 +354,110 @@ public sealed class ServicePanel : Window
         double barWidth = barScreenRectPx.Width / s;
         double barTop = barScreenRectPx.Top / s;
 
+        // ★ 高度是自适应的 ⇒ 先不可见地显示一次，量到真实高度再定位 ✓
+        //   （SizeToContent 的 Height 在布局完成前是 NaN ✓ 直接算 Top 会得到 NaN ✓）
+        if (!IsVisible)
+        {
+            Opacity = 0;
+            Show();
+        }
+        else
+        {
+            Opacity = 0;
+        }
+
+        UpdateLayout();
+        double height = double.IsNaN(Height) || Height <= 0 ? ActualHeight : Height;
+
         Left = barLeft + ((barWidth - Width) / 2);
-        Top = barTop - Height - 8;
+        Top = barTop - height - 8;
 
         // 夹在屏幕工作区内（工作区也是 DIP ✓ 同一量纲 ✓）
         Left = Math.Max(8, Math.Min(Left, SystemParameters.WorkArea.Right - Width - 8));
-        Top = Math.Max(8, Math.Min(Top, SystemParameters.WorkArea.Bottom - Height - 8));
+        Top = Math.Max(8, Math.Min(Top, SystemParameters.WorkArea.Bottom - height - 8));
 
         _shownAt = DateTime.Now;
-        Show();
         Activate();
+        PlayOpenAnimation();
+    }
+
+    // ---------------------------------------------------------------- 打开/关闭动画
+
+    /// <summary>带动画关闭 ✗ 直接 Hide() 会"啪"地消失 ✓</summary>
+    public void AnimatedHide()
+    {
+        if (!IsVisible)
+        {
+            return;
+        }
+        PlayCloseAnimation(Hide);
+    }
+
+    /// <summary>面板内容的根元素（做位移用 ✓ 整窗缩放会让圆角模糊 ✓）。</summary>
+    private TranslateTransform? _slide;
+    private DispatcherTimer? _animTimer;
+
+    /// <summary>
+    /// 打开动画：淡入 + 从下方 12 DIP 滑上来（用户要求"菜单打开和关闭增加一个动画"✓）。
+    /// ★ 只动**内容**的 TransY，不动窗口大小/位置 ✗
+    ///   分层窗口改大小要同步等 DWM 重新合成 ⇒ 卡 ✓ 而这里只是绘制位移 ⇒ 便宜 ✓
+    /// </summary>
+    private void PlayOpenAnimation()
+    {
+        if (_slide is null)
+        {
+            _slide = new TranslateTransform(0, 12);
+            RenderTransform = _slide;
+        }
+        else
+        {
+            _slide.Y = 12;
+        }
+
+        AnimateTo(1.0, 0.0, 180);
+    }
+
+    /// <summary>关闭动画：淡出 + 下沉 12 DIP，结束后才真正 Hide ✓。</summary>
+    private void PlayCloseAnimation(Action done)
+    {
+        if (_slide is null)
+        {
+            done();
+            return;
+        }
+        AnimateTo(0.0, 12.0, 140, done);
+    }
+
+    private void AnimateTo(double opacity, double slideY, int durationMs, Action? done = null)
+    {
+        _animTimer?.Stop();
+
+        double fromOpacity = Opacity;
+        double fromY = _slide?.Y ?? 0;
+        DateTime start = DateTime.Now;
+
+        _animTimer = new DispatcherTimer(DispatcherPriority.Render, Dispatcher)
+        {
+            Interval = TimeSpan.FromMilliseconds(16),
+        };
+        _animTimer.Tick += (_, _) =>
+        {
+            double t = Math.Clamp((DateTime.Now - start).TotalMilliseconds / durationMs, 0, 1);
+            double eased = 1 - Math.Pow(1 - t, 3);   // CubicEaseOut（和条子同一曲线 ✓）
+
+            Opacity = fromOpacity + ((opacity - fromOpacity) * eased);
+            if (_slide is not null)
+            {
+                _slide.Y = fromY + ((slideY - fromY) * eased);
+            }
+
+            if (t >= 1)
+            {
+                _animTimer!.Stop();
+                done?.Invoke();
+            }
+        };
+        _animTimer.Start();
     }
 
     /// <summary>刷新内容（宿主每轮轮询调 ✓ 面板开着时保持同步 ✓）。</summary>
