@@ -300,6 +300,11 @@ public sealed class ServicePanel : Window
             Maximum = 1,
             SmallChange = 0.01,
             LargeChange = 0.1,
+            // ★ 点轨道时**直接跳到点击位置** ✗ 不要按 LargeChange 步进 ✓
+            //   用户实测："点击后不是落在点击的位置，而是像加减按钮一样步进"✓
+            //   Slider 默认 IsMoveToPointEnabled=false ⇒ 点轨道等于"按一次 LargeChange"
+            //   （拖动走另一条路径，所以拖动没这个问题 ✓）
+            IsMoveToPointEnabled = true,
             Margin = new Thickness(0, 10, 0, 0),
             Foreground = AccentBrush,
         };
