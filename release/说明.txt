@@ -1,0 +1,38 @@
+RyuBar —— Win11 任务栏媒体条
+
+【怎么启动】
+  双击 RyuBar.exe 即可。启动后：
+    · 任务栏上出现媒体条（有媒体在播时才显示，自动避开已有按钮占用区）
+    · 托盘出现 RyuBar 图标（新图标默认在"通知区折叠面板"里，点任务栏的 ⌃ 箭头能看到；
+      想常显就把它从折叠面板拖到任务栏上）
+
+【托盘图标】
+  双击          → 打开设置窗口
+  右键          → 「设置」/「退出 RyuBar」
+
+【设置窗口】
+  · 六页：显示与位置 / 外观 / 歌词 / 切歌通知 / 交互 / 应用
+  · 改任何一项**即时生效**，没有"应用/确定"按钮
+  · 与媒体条是**同一个进程**：关掉设置窗口不影响媒体条
+  · 使用 Windows 的浅色/深色主题，强调色取系统强调色（换壁纸换主题色时自动跟随）
+
+【设置文件】
+  %LOCALAPPDATA%\RyuBar\settings.json      （改完自动写回，也可以直接编辑）
+  日志：%LOCALAPPDATA%\RyuBar\logs\ryubar.log
+  状态：%LOCALAPPDATA%\RyuBar\state.json
+  歌词缓存：%LOCALAPPDATA%\RyuBar\lyrics-cache.json
+
+【命令行参数】（可选）
+  RyuBar.exe --settings      启动后直接打开设置窗口
+  RyuBar.exe --diag          打印诊断信息（媒体会话、任务栏、歌词等）
+  RyuBar.exe --exit          退出正在运行的实例
+  RyuBar.exe --help          参数说明
+
+【运行要求】
+  Windows 10 1809 以上（Win11 体验最佳）
+  需要 .NET 10 桌面运行时（对应 Microsoft.WindowsDesktop.App 10.x）
+
+【已知限制】
+  · 任务栏自动隐藏时媒体条会跟着收起
+  · 托盘图标默认进折叠面板（系统行为，非缺陷）
+  · 封面大小、进度条形式暂未开放调整

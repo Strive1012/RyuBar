@@ -10,7 +10,7 @@ public partial class App : Application
 {
     private const string MutexName = "RyuBar.SingleInstance.v1";
     private const string ExitEventName = "RyuBar.Exit.v1";
-    private const string Version = "0.8.43";
+    private const string Version = "1.0.0";
 
     private Mutex? _mutex;
     private EventWaitHandle? _exitSignal;
@@ -194,7 +194,7 @@ public partial class App : Application
     {
         Print(
             """
-            RyuBar 0.8.43 — Windows 任务栏媒体条（自研）
+            RyuBar 1.0.0 — Windows 任务栏媒体条（自研）
 
             用法:
               RyuBar.exe            启动（单实例）
