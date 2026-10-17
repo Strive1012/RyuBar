@@ -754,6 +754,15 @@ public sealed class SettingsWindowTheme : Window
             Template = BareToggleTemplate(),
             VerticalAlignment = VerticalAlignment.Center,
             Cursor = Cursors.Hand,
+
+            // ★ 修"第一次点击没反应"✗（用户反复反馈 ✓）
+            //   原因：ToggleButton 默认 Focusable=true。窗口/控件还没拿到焦点时，
+            //        第一次点击会先被用来**转移焦点**，Checked 事件不触发 ⇒ 看起来没反应，
+            //        第二次点才切换 ✓
+            //   把 Focusable / IsTabStop 关掉 ⇒ 点击不再触发焦点转移，直接切换 ✓
+            //   （键盘可达性用一个不可见的 Focusable 层补：条子本身是鼠标密集型界面 ✓）
+            Focusable = false,
+            IsTabStop = false,
         };
         toggle.Checked += (_, _) => { AnimatePill(track, knob, true, accent); Apply(() => set(true)); };
         toggle.Unchecked += (_, _) => { AnimatePill(track, knob, false, accent); Apply(() => set(false)); };
