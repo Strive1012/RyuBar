@@ -516,7 +516,7 @@ public sealed class ServicePanel : Window
         //   必须改 Path.Data 才会真的换图标 ✓
         //   （三元表达式不能直接调用 ✗ 先取到委托再调 ✓）
         Func<Rect, Geometry> playPauseGlyph = snapshot.IsPlaying ? Glyph.Pause : Glyph.Play;
-        _playPauseGlyph.Data = playPauseGlyph(new Rect(0, 0, 16, 16));
+        _playPauseGlyph.Data = playPauseGlyph(new Rect(0, 0, 20, 20));
         _previous.IsEnabled = snapshot.CanPrevious;
         _playPause.IsEnabled = snapshot.CanPlayPause;
         _next.IsEnabled = snapshot.CanNext;
@@ -637,13 +637,44 @@ public sealed class ServicePanel : Window
         TextTrimming = TextTrimming.CharacterEllipsis,
     };
 
+    /// <summary>
+    /// 扁平化的控制键模板（用户："这三个按钮有点丑，能优化一下吗，要简约，扁平化"✓）。
+    /// ★ 去掉常驻的方形底色 ✗ 只在**悬停/按下**时出现一层极淡的圆角背景 ✓
+    ///   图标也放大一档（16 → 20）✓ 视觉重心交给图形本身 ✓
+    ///   形状用**圆形**而不是圆角矩形 ✓ —— 圆形更"播放器"、更不像按钮框 ✓
+    /// </summary>
+    private const string FlatButtonTemplate =
+        "<ControlTemplate TargetType='Button'" +
+        " xmlns='http://schemas.microsoft.com/winfx/2006/xaml/presentation'" +
+        " xmlns:x='http://schemas.microsoft.com/winfx/2006/xaml'>" +
+        "<Border x:Name='bg' Background='Transparent' CornerRadius='20'>" +
+        "<ContentPresenter HorizontalAlignment='Center' VerticalAlignment='Center'/>" +
+        "</Border>" +
+        "<ControlTemplate.Triggers>" +
+        "<Trigger Property='IsMouseOver' Value='True'>" +
+        "<Setter TargetName='bg' Property='Background' Value='#1FFFFFFF'/>" +
+        "</Trigger>" +
+        "<Trigger Property='IsPressed' Value='True'>" +
+        "<Setter TargetName='bg' Property='Background' Value='#33FFFFFF'/>" +
+        "</Trigger>" +
+        "<Trigger Property='IsEnabled' Value='False'>" +
+        "<Setter TargetName='bg' Property='Opacity' Value='0.35'/>" +
+        "</Trigger>" +
+        "</ControlTemplate.Triggers>" +
+        "</ControlTemplate>";
+
+    private static ControlTemplate? _flatButtonTemplate;
+
+    private static ControlTemplate FlatTemplate =>
+        _flatButtonTemplate ??= (ControlTemplate)System.Windows.Markup.XamlReader.Parse(FlatButtonTemplate);
+
     /// <summary>控制键 + 返回内部 Path ✗（播放/暂停要能按状态换图标 ✓ 所以得留住引用 ✓）</summary>
     private (Button Button, Path GlyphPath) MakeControlButtonWithGlyph(
         Func<Rect, Geometry> glyph, Action onClick, string tip)
     {
         Path path = new()
         {
-            Data = glyph(new Rect(0, 0, 16, 16)),
+            Data = glyph(new Rect(0, 0, 20, 20)),
             Fill = PrimaryText,
             Stretch = Stretch.None,
             HorizontalAlignment = HorizontalAlignment.Center,
@@ -652,11 +683,12 @@ public sealed class ServicePanel : Window
 
         Button button = new()
         {
-            Width = 46,
+            Width = 40,
             Height = 40,
-            Margin = new Thickness(6, 0, 6, 0),
-            Background = Frozen(Color.FromArgb(0x1A, 0xFF, 0xFF, 0xFF)),
+            Margin = new Thickness(8, 0, 8, 0),
+            Background = Brushes.Transparent,
             BorderThickness = new Thickness(0),
+            Template = FlatTemplate,
             Cursor = System.Windows.Input.Cursors.Hand,
             ToolTip = tip,
             Content = path,
@@ -669,16 +701,17 @@ public sealed class ServicePanel : Window
     {
         Button button = new()
         {
-            Width = 46,
+            Width = 40,
             Height = 40,
-            Margin = new Thickness(6, 0, 6, 0),
-            Background = Frozen(Color.FromArgb(0x1A, 0xFF, 0xFF, 0xFF)),
+            Margin = new Thickness(8, 0, 8, 0),
+            Background = Brushes.Transparent,
             BorderThickness = new Thickness(0),
+            Template = FlatTemplate,
             Cursor = System.Windows.Input.Cursors.Hand,
             ToolTip = tip,
             Content = new Path
             {
-                Data = glyph(new Rect(0, 0, 16, 16)),
+                Data = glyph(new Rect(0, 0, 20, 20)),
                 Fill = PrimaryText,
                 Stretch = Stretch.None,
                 HorizontalAlignment = HorizontalAlignment.Center,
