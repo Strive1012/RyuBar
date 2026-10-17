@@ -1499,14 +1499,16 @@ public sealed class SettingsWindowTheme : Window
     {
         Header("外观", "媒体条本体、主题跟随与配色来源。");
         Group("主题");
-        Toggle("跟随系统强调色", "开关、选中项、图标块都直接取系统的强调色；换壁纸自动换主题色时也会跟着变。",
+        Toggle("跟随系统强调色", "开关、选中项、图标块都直接取系统的强调色；换壁纸自动换主题色时也会跟着变。关掉后固定使用默认蓝 #60A5FA。",
             "\uE790", () => _store.Current.Ui.FollowSystemAccent, v => _store.Current.Ui.FollowSystemAccent = v);
         Note($"当前系统强调色：#{SystemColors.AccentColor.R:X2}{SystemColors.AccentColor.G:X2}{SystemColors.AccentColor.B:X2}（第一方 SystemColors.AccentColor，系统里改了一刷新就变）");
         Group("媒体条");
         Toggle("环形进度", "绕在专辑图外圈的一圈进度（不影响媒体条宽度）。", "\uE9D9",
             () => _store.Current.Bar.RingProgress, v => _store.Current.Bar.RingProgress = v);
-        Toggle("环上可拖动跳转", "在环形进度上按住拖动可以跳转进度。仅在显示环形进度且曲目可跳转时有效。", "\uE8C9",
+        Border ringSeekRow = Toggle("环上可拖动跳转", "在环形进度上按住拖动可以跳转进度。仅在显示环形进度且曲目可跳转时有效。", "\uE8C9",
             () => _store.Current.Bar.RingSeek, v => _store.Current.Bar.RingSeek = v);
+        // ★ 补联动 ✗ 原来环形进度关掉后它还能点 ⇒ 像坏掉的开关 ✓（用户盘点时发现 ✓）
+        LinkRow(ringSeekRow, () => _store.Current.Bar.RingProgress);
         Toggle("条状进度", "原来的横向进度条（关掉后媒体条会更窄）。", "\uE9D9",
             () => _store.Current.Bar.BarProgress, v => _store.Current.Bar.BarProgress = v);
         Toggle("控制按钮", "上一首 / 播放暂停 / 下一首（关掉后媒体条会更窄）。", "\uE768",
@@ -1523,7 +1525,8 @@ public sealed class SettingsWindowTheme : Window
         Border spectrumBarsRow = Number("频谱柱数", "这一排画几根柱子；越少越粗，越多越细。",
             "\uE8D2", 4, 16, 1, () => _store.Current.Bar.SpectrumBars, v => _store.Current.Bar.SpectrumBars = v, "根");
         LinkRow(spectrumBarsRow, () => _store.Current.Bar.Spectrum);
-        Note("以上几项都可以任意组合，都关掉也能用（只剩封面、标题歌词与时间）；媒体条宽度会跟着变化。");
+        Note("以上几项都可以任意组合，都关掉也能用（只剩封面、标题歌词与时间）；媒体条宽度会跟着变化。" +
+       "环形进度与条状进度是两套独立的指示器，同时开启时两种都会显示。");
     }
 
     private void BuildLyricsPage()
@@ -1643,8 +1646,9 @@ public sealed class SettingsWindowTheme : Window
                 // 忽略
             }
         });
-        Group("高级");
-        Note($"网易云位置偏移：{(string.IsNullOrEmpty(_store.Current.Readers.NetEasePositionOffset) ? "（自动标定，尚未写入）" : _store.Current.Readers.NetEasePositionOffset)} —— 内存扫描自动标定出来的值，正常无需改动。");
+        // ★ 删掉「高级 → 网易云位置偏移」✗
+        //   那是内存扫描的内部产物：用户既看不懂也改不了，还暴露了实现方式 ✓
+        //   需要时看日志即可（NetEaseProbe 会写）✓
         Group("关于");
         // ★ 版本号：从**程序集**读 ✗ 不在界面里写死 ✓
         //   这样以后只改 RyuBar.csproj 的 <Version> ⇒ 这里自动跟着变 ✓
@@ -1656,7 +1660,8 @@ public sealed class SettingsWindowTheme : Window
             FontWeight = FontWeights.SemiBold,
             Margin = new Thickness(0, 2, 0, 3),
         });
-        Note($"构建 {ReadAppInformationalVersion()}");
+        // ★ 界面只显示干净的版本号 ✗ 不带 git 哈希 ✓
+        //   `0.8.41+fc668b3…` 对普通用户零价值，只在排查时有用 ⇒ 走 --diag 输出 ✓
         Note("RyuBar 设置 · 与媒体条同一个进程；点右上角关闭只是关掉本窗口，媒体条继续常驻。");
 
         Button quit = new()
