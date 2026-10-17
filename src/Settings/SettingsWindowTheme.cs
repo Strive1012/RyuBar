@@ -760,10 +760,20 @@ public sealed class SettingsWindowTheme : Window
             //        第一次点击会先被用来**转移焦点**，Checked 事件不触发 ⇒ 看起来没反应，
             //        第二次点才切换 ✓
             //   把 Focusable / IsTabStop 关掉 ⇒ 点击不再触发焦点转移，直接切换 ✓
-            //   （键盘可达性用一个不可见的 Focusable 层补：条子本身是鼠标密集型界面 ✓）
             Focusable = false,
             IsTabStop = false,
+
+            // ★ 必须把初始状态同步给 IsChecked ✗
+            //   原来只画了视觉（track/knob），IsChecked 一直是 null
+            //   ⇒ 第一次点击把它设成 true，Checked 触发 ✓ 但如果用户看到的是"已经是开"，
+            //     这一下反而是"从空变成开"⇒ 视觉上像没变化 ✓ 而且日志里看不出异常 ✓
+            IsChecked = on,
         };
+        // 诊断：确认点击是否真的到达开关（用户反馈"连动都不动"）
+        toggle.PreviewMouseLeftButtonDown += (_, _) =>
+            Diagnostics.Log.Write("nav", $"开关被按下: {title}（IsChecked={toggle.IsChecked}）");
+        toggle.Click += (_, _) =>
+            Diagnostics.Log.Write("nav", $"开关 Click: {title}（IsChecked={toggle.IsChecked}）");
         toggle.Checked += (_, _) => { AnimatePill(track, knob, true, accent); Apply(() => set(true)); };
         toggle.Unchecked += (_, _) => { AnimatePill(track, knob, false, accent); Apply(() => set(false)); };
 
@@ -792,13 +802,25 @@ public sealed class SettingsWindowTheme : Window
         }
     }
 
-    /// <summary>极简模板：只呈现 Content（去掉主题按钮那层底/描边）。</summary>
+    /// <summary>
+    /// 极简模板：只呈现 Content（去掉主题按钮那层底/描边）。
+    /// ★ 外层必须有**有尺寸的容器** ✗ 只有裸 ContentPresenter 时，ToggleButton 的实际命中区
+    ///   可能塌缩到很小 —— 用户点视觉上的开关却命中到卡片背景 ⇒ "第一次点击没反应"✓
+    ///   （日志实测：`命中=Border`，而 Border 是卡片行 ✓）
+    /// </summary>
     private static ControlTemplate BareToggleTemplate()
     {
+        FrameworkElementFactory grid = new(typeof(Grid));
+        grid.SetValue(FrameworkElement.WidthProperty, 40.0);
+        grid.SetValue(FrameworkElement.HeightProperty, 20.0);
+        grid.SetValue(Panel.BackgroundProperty, Brushes.Transparent);   // 透明也要有画刷才吃命中 ✓
+
         FrameworkElementFactory presenter = new(typeof(ContentPresenter));
         presenter.SetValue(FrameworkElement.HorizontalAlignmentProperty, HorizontalAlignment.Center);
         presenter.SetValue(FrameworkElement.VerticalAlignmentProperty, VerticalAlignment.Center);
-        return new ControlTemplate(typeof(ToggleButton)) { VisualTree = presenter };
+        grid.AppendChild(presenter);
+
+        return new ControlTemplate(typeof(ToggleButton)) { VisualTree = grid };
     }
 
     private void Choice(string title, string description, string glyph, string[] options, Func<int> get, Action<int> set)
