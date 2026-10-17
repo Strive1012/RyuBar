@@ -857,6 +857,10 @@ public sealed partial class LyricsService
         return track;
     }
 
+    /// <summary>匹配 QRC 逐字元组 `(起始,时长,0)` —— 清理正文里残留的坐标串。</summary>
+    private static readonly System.Text.RegularExpressions.Regex TuplePattern =
+        new(@"\(\s*-?\d+\s*,\s*-?\d+\s*,\s*-?\d+\s*\)", System.Text.RegularExpressions.RegexOptions.Compiled);
+
     private static LyricTrack ToLyricTrack(LyricsData data, string title, string artist)
     {
         List<LyricLine> lines = new(data.Lines?.Count ?? 0);
@@ -878,7 +882,26 @@ public sealed partial class LyricsService
                 }
             }
 
-            lines.Add(new LyricLine(line.Text.Trim(), start, end, syllables));
+            // ★ QRC（逐字格式）的 line.Text 是不可靠的 ✗
+            //   它有时是"（起始,时长,0）字（起始,时长,0）字"这种带元组的原始串，
+            //   直接当正文会渲染成 `(44880,240,0)连(45120,480,0)相…`（实测 ✓）
+            //   有逐字数据时用音节文本重新拼出正文 ✓ 这才是用户该看到的 ✓
+            string text = syllables is { Count: > 0 }
+                ? string.Concat(syllables.Select(s => s.Text)).Trim()
+                : line.Text.Trim();
+
+            // 兜底：没有逐字数据、但正文里仍残留 `(开始,持续,0)` 这类元组时清掉 ✓
+            if (text.Contains('('))
+            {
+                text = TuplePattern.Replace(text, string.Empty).Trim();
+            }
+
+            if (string.IsNullOrWhiteSpace(text))
+            {
+                continue;
+            }
+
+            lines.Add(new LyricLine(text, start, end, syllables));
         }
 
         lines.Sort((a, b) => a.StartMs.CompareTo(b.StartMs));
