@@ -1846,7 +1846,19 @@ public sealed class BarView : FrameworkElement
                 return;
             }
 
-            double scale = Math.Min(drawn.Width / bounds.Width, drawn.Height / bounds.Height);
+            // ★ 不撑满 ✗ 留一点内边距 ✓（用户："有点大了"✓）
+            //   撑满时视觉重量和封面一样重 ⇒ 显得过大 ✓
+            //   0.80 是"明显比封面轻一档、但仍填得比较满"的量 ✓
+            const double fill = 0.80;
+
+            // ★ 横向再收一点 ✗ 用户反馈"好像有点胖"✓
+            //   SVG 的 path 是 1.03 宽高比（接近正方）✓ 但音符类图标横向略瘦会更像"音符"✓
+            //   ⇒ 横向单独乘 0.92 ✓ 仍用统一 scale 保证**不出现斜向变形**（只是整体变窄 ✓）
+            const double narrowX = 0.92;
+
+            double scale = Math.Min(
+                drawn.Width * fill * narrowX / bounds.Width,
+                drawn.Height * fill / bounds.Height);
             double offsetX = drawn.X + ((drawn.Width - (bounds.Width * scale)) / 2) - (bounds.X * scale);
             double offsetY = drawn.Y + ((drawn.Height - (bounds.Height * scale)) / 2) - (bounds.Y * scale);
 
