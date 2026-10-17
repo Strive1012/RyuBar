@@ -111,8 +111,27 @@ public sealed class TrayIcon : IDisposable
             hIcon = _icon,
             szTip = tooltip,
         };
+
+        // ★ NIM_ADD 前先删一次 ✗
+        //   条子窗口重建时会 new 一个 TrayIcon —— 旧的若没删干净，
+        //   同一个 uID 再 ADD 会返回 false ⇒ 图标不出现（实测日志有 False ✓）
+        _ = Shell_NotifyIcon(NIM_DELETE, ref data);
+
         _added = Shell_NotifyIcon(NIM_ADD, ref data);
-        Diagnostics.Log.Write("tray", $"Shell_NotifyIcon(NIM_ADD) 返回 {_added}（true = 通知区已接受）");
+        if (!_added)
+        {
+            // 通知区还没就绪（explorer 刚重启）时会失败 —— 短暂重试几次 ✓
+            for (int attempt = 0; attempt < 5 && !_added; attempt++)
+            {
+                System.Threading.Thread.Sleep(200);
+                _added = Shell_NotifyIcon(NIM_ADD, ref data);
+            }
+        }
+
+        // ★ 日志必须如实反映结果 ✗ 原来无条件写"已添加"，掩盖了失败 ✓
+        Diagnostics.Log.Write("tray", _added
+            ? "托盘图标已添加"
+            : "托盘图标添加失败（通知区未就绪？）");
     }
 
     /// <summary>宿主收到 <see cref="CallbackMessage"/> 时调用；返回 true 表示已处理。</summary>
@@ -385,7 +404,9 @@ public sealed class TrayIcon : IDisposable
 
     public void Dispose()
     {
-        if (_added)
+        // ★ 无条件尝试删除 ✗ 原来只在 _added 为 true 时删，
+        //   一旦某次 ADD 失败（_added=false）就会留下一个删不掉的残留图标 ✓
+        if (_hwnd != IntPtr.Zero)
         {
             NOTIFYICONDATA data = new()
             {
@@ -394,8 +415,8 @@ public sealed class TrayIcon : IDisposable
                 uID = 1,
             };
             _ = Shell_NotifyIcon(NIM_DELETE, ref data);
-            _added = false;
         }
+        _added = false;
 
         if (_icon != IntPtr.Zero)
         {
