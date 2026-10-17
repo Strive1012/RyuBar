@@ -44,7 +44,11 @@ public sealed class ServicePanel : Window
     private readonly TextBlock _title;
     private readonly TextBlock _artist;
     private readonly TextBlock _source;
-    private readonly Slider _progress;
+    private readonly Grid _progressHost;
+    private readonly Border _progressTrack;
+    private readonly Border _progressFill;
+    private readonly Ellipse _progressThumb;
+    private double _progressRatio;
     private readonly TextBlock _position;
     private readonly TextBlock _duration;
     private readonly Button _previous;
@@ -131,34 +135,56 @@ public sealed class ServicePanel : Window
         body.Children.Add(header);
 
         // ② 进度条 + 时间
-        // ★ 用 Slider 而不是 ProgressBar ✗（用户："进度条应该有个原点，能更方便拖动，参考 AFM"✓）
-        //   ProgressBar 没有可抓的把手 ✓ Slider 自带 Thumb ✓ 再加上自定义样式做成细线 + 圆点 ✓
-        _progress = new Slider
+        // ★ **完全自绘** ✗ 不用 Slider 也不用 ProgressBar ✓（用户："已播放的部分没有颜色"✓）
+        //   试过 Slider + 自定义模板：`DecreaseRepeatButton` 在运行时没按预期铺开 ⇒ 轨道整条是白的 ✗
+        //   自绘最可控：底轨 + 已播放填充 + 圆点，三个元素各自定位 ✓ 所见即所得 ✓
+        _progressHost = new Grid
         {
-            Minimum = 0,
-            Maximum = 1,
-            SmallChange = 0.01,
-            LargeChange = 0.1,
-            IsMoveToPointEnabled = true,   // 点轨道直接跳 ✓（和条上的行为一致 ✓）
+            Height = 18,
+            Background = Brushes.Transparent,
             Cursor = System.Windows.Input.Cursors.Hand,
             Margin = new Thickness(0, 2, 0, 0),
         };
-        ApplyProgressStyle(_progress);
-        _progress.PreviewMouseLeftButtonDown += (_, _) => _dragging = true;
-        _progress.PreviewMouseLeftButtonUp += OnProgressUp;
-        // ★ 兜底复位 ✗（用户："拖动后也不会回到正常的位置"✓）
-        //   Slider 会捕获鼠标 ⇒ 某些情况下 PreviewMouseLeftButtonUp 收不到 ⇒ _dragging 卡在 true
-        //   ⇒ 之后 Update 里再也不刷新进度 ⇒ 进度条永远停在拖到的位置 ✓
-        _progress.LostMouseCapture += (_, _) => _dragging = false;
-        _progress.ValueChanged += (_, _) =>
+
+        _progressTrack = new Border
         {
-            // 拖动时实时更新时间显示 ✓ 松手才真正 seek ✓
-            if (_snapshot.Duration > TimeSpan.Zero)
-            {
-                _position.Text = BarView.Format(
-                    TimeSpan.FromSeconds(_snapshot.Duration.TotalSeconds * _progress.Value));
-            }
+            Height = 4,
+            CornerRadius = new CornerRadius(2),
+            Background = TrackBrush,
+            VerticalAlignment = VerticalAlignment.Center,
+            HorizontalAlignment = HorizontalAlignment.Stretch,
         };
+
+        _progressFill = new Border
+        {
+            Height = 4,
+            CornerRadius = new CornerRadius(2),
+            Background = AccentBrush,
+            VerticalAlignment = VerticalAlignment.Center,
+            HorizontalAlignment = HorizontalAlignment.Left,
+            Width = 0,
+        };
+
+        _progressThumb = new Ellipse
+        {
+            Width = 14,
+            Height = 14,
+            Fill = AccentBrush,
+            Stroke = Brushes.White,
+            StrokeThickness = 2,
+            VerticalAlignment = VerticalAlignment.Center,
+            HorizontalAlignment = HorizontalAlignment.Left,
+            Margin = new Thickness(-7, 0, 0, 0),   // 让圆心落在进度点上 ✓
+        };
+
+        _progressHost.Children.Add(_progressTrack);
+        _progressHost.Children.Add(_progressFill);
+        _progressHost.Children.Add(_progressThumb);
+
+        _progressHost.SizeChanged += (_, _) => ApplyProgressVisual();
+        _progressHost.MouseLeftButtonDown += OnProgressDown;
+        _progressHost.MouseMove += OnProgressMove;
+        _progressHost.MouseLeftButtonUp += OnProgressUp;
 
         Grid timeRow = new() { Margin = new Thickness(0, 6, 0, 14) };
         timeRow.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
@@ -171,7 +197,7 @@ public sealed class ServicePanel : Window
         timeRow.Children.Add(_position);
         timeRow.Children.Add(_duration);
 
-        body.Children.Add(_progress);
+        body.Children.Add(_progressHost);
         body.Children.Add(timeRow);
 
         // ③ 三个控制键
@@ -292,17 +318,18 @@ public sealed class ServicePanel : Window
         DateTimeOffset now = DateTimeOffset.Now;
         if (!_dragging)
         {
-            _progress.Value = snapshot.ProgressAt(now);
-            // 拖动中途松开时 _dragging 可能残留 true（Slider 抢了鼠标事件）⇒ 这里兜底复位 ✓
+            _progressRatio = snapshot.ProgressAt(now);
             _position.Text = BarView.Format(snapshot.PositionAt(now));
+            ApplyProgressVisual();
         }
         _duration.Text = snapshot.Duration > TimeSpan.Zero ? BarView.Format(snapshot.Duration) : "--:--";
 
-        // ★ 播放器不支持跳转 ⇒ 进度条**禁用拖动** ✗（用户："qq音乐这种不能控制的软件应该不能拖动"✓）
-        //   微信/QQ音乐/网易云这类只上报 SMTC 事件的播放器 CanSeek=false ✓
-        //   允许拖动只会看到"拖了又弹回去"✗
-        _progress.IsEnabled = snapshot.CanSeek;
-        _progress.Opacity = snapshot.CanSeek ? 1.0 : 0.55;
+        // ★ 播放器不支持跳转 ⇒ 进度条**不可拖** ✗（用户："qq音乐这种不能控制的软件应该不能拖动"✓）
+        //   微信/QQ音乐/网易云这类只上报 SMTC 事件，CanSeek=false ✓
+        //   允许拖动只会看到"拖了又弹回去"✗ ⇒ 禁用交互 + 降不透明度提示 ✓
+        bool seekable = snapshot.CanSeek;
+        _progressHost.Cursor = seekable ? System.Windows.Input.Cursors.Hand : System.Windows.Input.Cursors.Arrow;
+        _progressHost.Opacity = seekable ? 1.0 : 0.55;
 
         // ★ 播放/暂停图标要跟着状态切换 ✗（用户："播放暂停按钮不会根据当前播放状态切换"✓）
         //   原来写的是 `_playPause.Tag = ...` ✗ —— Tag 是自定义字段，界面上根本没人读它 ✓
@@ -321,9 +348,41 @@ public sealed class ServicePanel : Window
         }
     }
 
-    // ---------------------------------------------------------------- 进度拖动
+    // ---------------------------------------------------------------- 进度条（自绘）
 
-    /// <summary>松手才真正 seek ✓ 拖动过程中只更新时间显示 ✓（Slider 自己处理位置 ✓）</summary>
+    /// <summary>把 0..1 的比例画成"填充 + 圆点"的位置（每次数据变化或尺寸变化都调 ✓）。</summary>
+    private void ApplyProgressVisual()
+    {
+        double width = _progressHost.ActualWidth;
+        if (width <= 1)
+        {
+            return;   // 还没布局完 ✓ 等 SizeChanged 再来一次 ✓
+        }
+
+        double filled = Math.Clamp(_progressRatio, 0, 1) * width;
+        _progressFill.Width = filled;
+        _progressThumb.Margin = new Thickness(filled - 7, 0, 0, 0);
+    }
+
+    private void OnProgressDown(object sender, System.Windows.Input.MouseButtonEventArgs e)
+    {
+        if (!_snapshot.CanSeek)
+        {
+            return;   // 不可跳转的播放器：连拖动都不给 ✓（用户明确要求 ✓）
+        }
+        _dragging = true;
+        _progressHost.CaptureMouse();
+        ApplyProgressDrag(e);
+    }
+
+    private void OnProgressMove(object sender, System.Windows.Input.MouseEventArgs e)
+    {
+        if (_dragging)
+        {
+            ApplyProgressDrag(e);
+        }
+    }
+
     private void OnProgressUp(object sender, System.Windows.Input.MouseButtonEventArgs e)
     {
         if (!_dragging)
@@ -331,7 +390,24 @@ public sealed class ServicePanel : Window
             return;
         }
         _dragging = false;
-        SeekRequested?.Invoke(_progress.Value);
+        _progressHost.ReleaseMouseCapture();
+        SeekRequested?.Invoke(_progressRatio);
+    }
+
+    private void ApplyProgressDrag(System.Windows.Input.MouseEventArgs e)
+    {
+        double width = _progressHost.ActualWidth;
+        if (width <= 1)
+        {
+            return;
+        }
+        _progressRatio = Math.Clamp(e.GetPosition(_progressHost).X / width, 0, 1);
+        ApplyProgressVisual();
+        if (_snapshot.Duration > TimeSpan.Zero)
+        {
+            _position.Text = BarView.Format(
+                TimeSpan.FromSeconds(_snapshot.Duration.TotalSeconds * _progressRatio));
+        }
     }
 
     // ---------------------------------------------------------------- 小工具

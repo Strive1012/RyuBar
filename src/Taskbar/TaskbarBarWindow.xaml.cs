@@ -1227,20 +1227,73 @@ public partial class TaskbarBarWindow : Window
         return panel;
     }
 
-    /// <summary>面板里的音量滑块（0..1）—— 只调**当前播放源那个应用**的会话音量 ✓。</summary>
+    /// <summary>
+    /// 面板里的音量滑块（0..1）—— 只调**当前播放源那个应用**的会话音量 ✓。
+    /// ★ 按进程 id 定位会话 ✗ 不按窗口标题 ✓（同名的后台进程不该被动 ✓）
+    ///   pid 从 SMTC 的 Source 解析：`cloudmusic.exe` → `cloudmusic` → 带窗口的 pid ✓
+    /// </summary>
     private void OnPanelVolumeChanged(double volume)
     {
         _appVolume = Math.Clamp(volume, 0, 1);
-        Log.Write("input", $"面板音量 → {Math.Round(_appVolume * 100)}%（单应用，待接入 WASAPI 会话）");
+
+        int? pid = ResolveSourceProcessId();
+        if (pid is null)
+        {
+            Log.Write("input", $"面板音量 {Math.Round(_appVolume * 100)}% —— 找不到播放源进程，未生效");
+            return;
+        }
+
+        bool ok = _appVolumeControl.TrySet(pid.Value, (float)_appVolume);
+        Log.Write("input", $"面板音量 → {Math.Round(_appVolume * 100)}%（pid={pid}{(ok ? " ✓" : "，该进程没有音频会话 ✗")}）");
     }
 
     private void OnPanelMuteToggled(bool muted)
     {
-        Log.Write("input", $"面板静音 → {muted}（待接入 WASAPI 会话）");
+        int? pid = ResolveSourceProcessId();
+        if (pid is null)
+        {
+            return;
+        }
+        _appVolumeControl.TrySetMute(pid.Value, muted);
+        Log.Write("input", $"面板静音 → {muted}（pid={pid}）");
     }
 
-    /// <summary>当前应用音量（0..1）。没有 WASAPI 会话支持时保持 1 ✓ 面板仍可拖动但不生效 ✓</summary>
+    /// <summary>从当前播放源解析出**带窗口的**进程 id；解析不出来返回 null ✓。</summary>
+    private int? ResolveSourceProcessId()
+    {
+        string? exe = Media.SourceNames.ExecutableName(_media.Snapshot.Source);
+        if (exe is null)
+        {
+            return null;
+        }
+
+        foreach (System.Diagnostics.Process process in System.Diagnostics.Process.GetProcessesByName(exe))
+        {
+            try
+            {
+                if (process.MainWindowHandle != IntPtr.Zero)
+                {
+                    return process.Id;
+                }
+            }
+            catch
+            {
+                // 进程已退出 ⇒ 跳过 ✓
+            }
+            finally
+            {
+                process.Dispose();
+            }
+        }
+
+        return null;
+    }
+
+    /// <summary>当前应用音量（0..1）—— 面板滑块显示用 ✓ 真正生效靠 _appVolumeControl ✓。</summary>
     private double _appVolume = 1.0;
+
+    /// <summary>单应用音量（WASAPI 会话音量）✓</summary>
+    private readonly Audio.AppVolume _appVolumeControl = new();
 
     private Menu.ServicePanel? _servicePanel;
 
