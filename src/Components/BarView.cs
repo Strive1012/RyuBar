@@ -882,6 +882,13 @@ public sealed class BarView : FrameworkElement
                     //   宽度被下一句撑开 ⇒ 短句居中后两边空出一大块 ✓
                     //   现在只按**当前句**算：短句贴紧内容 ✓ 下一句长了就自己滚动/裁剪 ✓
                     //   代价：条宽会随每句长度变化 —— 但这正是宽度缓动存在的意义（220ms 平滑过渡 ✓）
+                    // ★ 必须按**两行里更长的那个**算 ✗（用户指出 ✓）
+                    //   双行显示时只按当前句算宽度，下一句更长就会被裁掉 ✓
+                    //   「歌词很短但空隙大」是另一个原因，不能靠牺牲下一句的可见性来解决 ✗
+                    if (!string.IsNullOrWhiteSpace(nxt))
+                    {
+                        need = Math.Max(need, MakeText(nxt, _artistSize, ArtistBrush, 4000, FontWeights.Normal).Width);
+                    }
                     _lyricsNeedWidth = need;
                     _lyricsNeedKey = key;
                 }
@@ -1658,7 +1665,8 @@ public sealed class BarView : FrameworkElement
         //   否则 Pieces 为空 ⇒ sungWidth 恒为 0 ⇒ 已唱部分完全不上色 ✓（用户实测 ✓）
         if (!cached.HasPieces)
         {
-            sungWidth = cached.SungWidthByLineProgress(line.Progress);
+            // 整行高亮 ✓（当前行就是"正在唱的那行"✓ 不去猜每个字的时间 ✗）
+            sungWidth = cached.SungWidthForWholeLine();
         }
 
         // 还在一行内逐字推进 → 需要 60fps 连续重画（滚到头/唱完就停）
@@ -1741,18 +1749,14 @@ public sealed class BarView : FrameworkElement
         }
 
         /// <summary>
-        /// 没有逐字时间轴时的已唱宽度（按宿主给的整行进度线性铺开 ✓）。
-        /// ★ 原来这里直接 return 0 ✗ —— 用户的歌从网易云取到的是**纯 LRC**（只有整行时间），
-        ///   Pieces 为空 ⇒ "已唱部分"整块不画 ⇒ 歌词永远是暗色、没有高亮 ✓
-        ///   （用户实测："已经唱过的部分歌词颜色没了"✓ QQ音乐给 QRC 有逐字，所以那时能看到 ✓）
+        /// 没有逐字时间轴时的已唱宽度 —— **整行处理** ✗ 不按比例铺开 ✓（用户明确要求 ✓）
+        /// ★ 为什么不能按比例：纯 LRC 只有"这一行从几秒唱到几秒"，
+        ///   根本不知道每个字什么时候唱 ⇒ 从左到右渐变填充是**编出来的**，与实际演唱并不吻合 ✓
+        ///   正确做法：既然只能知道"整行"，就整行一起变 —— 当前行整行用高亮色 ✓
         /// </summary>
-        public double SungWidthByLineProgress(double lineProgress)
+        public double SungWidthForWholeLine()
         {
-            if (Width <= 0)
-            {
-                return 0;
-            }
-            return Width * Math.Clamp(lineProgress, 0, 1);
+            return Width;
         }
     }
 
