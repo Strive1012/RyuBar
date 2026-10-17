@@ -164,3 +164,7 @@ summary: 7/7 passed, 0 failed
 - **占用区探测只认 Explorer 进程的任务栏元素**：第三方覆盖窗口（如 TranslucentTB 的额外层）暂未识别。
 - **空间不足时整条隐藏**（并写日志说明原因），不做压窄到看不见的条。
 - 条的外观目前是阶段 1 的占位胶囊，真正的观感在阶段 3 做。
+
+## 许可
+
+MIT License，见 [LICENSE](LICENSE)。
