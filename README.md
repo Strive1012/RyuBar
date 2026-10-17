@@ -2,8 +2,7 @@
 
 把媒体条放进 Windows 任务栏。封面、歌词、频谱、进度，一眼看到在放什么。
 
-**自研实现**：任务栏宿主、媒体通道、渲染、歌词引擎、频谱分析全部自己写。
-设计上参考过 [AF Media Bar](https://github.com/Fervent-Tempo/AF-Media-Bar) 的外观与交互，但**代码一行没有复制**。
+界面与交互参考 [AF Media Bar](https://github.com/Fervent-Tempo/AF-Media-Bar)，实现为其独立版本。
 
 ---
 
@@ -75,7 +74,7 @@ Windows 的 **SMTC**（`GlobalSystemMediaTransportControlsSessionManager`）。
 
 ### 频谱
 
-`NAudio` 做 WASAPI 环回采集（唯一的第三方依赖），**分析层完全自研**：
+`NAudio` 负责 WASAPI 环回采集，频谱分析由本项目实现：
 Hann 窗 + 512 点 radix-2 FFT + 对数分布 16 频段 + 快起慢落。
 
 ### 单应用音量 / 输出设备
@@ -139,16 +138,16 @@ src/
 
   Media/
     MediaSnapshot.cs            一次媒体快照 + 位置插值（没有时间轴就不外推）
-    MediaSessionWatcher.cs      SMTC 通道：会话/事件/封面/控制指令
+    MediaSessionWatcher.cs      SMTC 通道：会话 / 事件 / 封面 / 控制指令
     SourceNames.cs              AUMID → 友好名 / 进程名
     Readers/                    播放器内存适配（网易云精确进度）
 
   Lyrics/
-    LyricsService.cs            取词与缓存（QQ音乐 / 网易云 / 跨来源兜底）
+    LyricsService.cs            取词与缓存（QQ 音乐 / 网易云 / 跨来源兜底）
     LyricsDiskCache.cs          原始文本与解析结果的两级缓存
 
   Audio/
-    SpectrumAnalyzer.cs         WASAPI 环回 + 自研 FFT
+    SpectrumAnalyzer.cs         WASAPI 环回 + FFT
     AppVolume.cs                单应用音量（音频会话）
     AudioDevices.cs             输出设备枚举与切换（IPolicyConfig）
 
