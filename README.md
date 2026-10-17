@@ -84,7 +84,7 @@ Hann 窗 + 512 点 radix-2 FFT + 对数分布 16 频段 + 快起慢落。
 
 ### 60fps 动画
 
-踩过的坑都记在 [CHANGELOG](CHANGELOG.md) 里，核心三条：
+核心三条：
 
 1. **每帧 `SetWindowPos` 带 `SWP_FRAMECHANGED`** 会重建分层窗口表面 ⇒ 帧间隔硬上限 ~22ms。动画必须搬到"内容布局"，窗口宽度一次到位。
 2. **`DispatcherTimer(16ms)` 会被 UI 线程上别的定时器挤后** ⇒ 换成 `CompositionTarget.Rendering`，并限流到 16ms 且跳过时不累加。
