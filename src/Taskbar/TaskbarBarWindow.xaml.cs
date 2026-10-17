@@ -1336,6 +1336,8 @@ public partial class TaskbarBarWindow : Window
     private void OnLyricDoubleClicked()
     {
         string source = _media.Snapshot.Source;
+        // ★ 双击 = "单击 + 更强动作" ✗ 不要关掉刚打开的面板 ✓
+        //   （第一次点击已经把面板弹出来了 ✓ 这里只加激活应用 ✓）
         Log.Write("input", $"歌词双击 → 激活播放源：'{source}'");
 
         string? exe = Media.SourceNames.ExecutableName(source);

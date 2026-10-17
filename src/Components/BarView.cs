@@ -539,12 +539,7 @@ public sealed class BarView : FrameworkElement
     public event Action? LyricDoubleClicked;
 
     /// <summary>单击确认延迟（毫秒 ✓）。要大于系统双击判定的时间窗 ✓</summary>
-    // ★ 200ms（原 320）✗ 用户实测"感觉 1 秒后才反应过来"✓
-    //   320 + 面板首次创建(~300) + 动画 180 ≈ 800ms ✓
-    //   200 仍明显大于"两次点击的常见间隔"（误判双击的概率很低 ✓），但响应快得多 ✓
-    private const int LyricSingleClickDelayMs = 200;
 
-    private System.Windows.Threading.DispatcherTimer? _lyricClickTimer;
 
     /// <summary>设置歌词显示数据（null = 没有歌词，回落到标题/歌手）。</summary>
     public void SetLyrics(LyricsView? view)
@@ -1992,27 +1987,21 @@ public sealed class BarView : FrameworkElement
         UpdateHover(hit);
         _pressed = hit;
 
-        // ★ 歌词区：单击 / 双击分开处理（用户要求 ✓）
-        //   单击 → 延迟确认（等双击判定 ✓）
-        //   双击 → 取消待发的单击 ✓ 立刻通知宿主去激活播放源
+        // ★ 歌词区：单击立即响应 ✗ 不延迟 ✓
+        //   用户指出得对：我原来用 200ms 定时器"等双击判定"，那让单击慢半拍 ✓
+        //   但 WPF / Java 的 ClickCount 都只表示"第几次点击"✗ 物理上无法直接判定"最终是单击"✗
+        //   （"单击"的定义就是"没有第二次点击"⇒ 必须等 ✗ Java 的 JButton 内部同样用 Timer ✓）
+        //   ⇒ 不需要那个判定：双击的语义本来就是"单击 + 更强动作"✓
+        //     所以 ClickCount==1 立刻弹面板 ✓ ClickCount>=2 在面板已开的基础上激活播放源 ✓
         if (hit == BarHit.Text)
         {
             if (e.ClickCount >= 2)
             {
-                _lyricClickTimer?.Stop();
                 LyricDoubleClicked?.Invoke();
             }
             else
             {
-                _lyricClickTimer ??= new System.Windows.Threading.DispatcherTimer(
-                    System.Windows.Threading.DispatcherPriority.Input, Dispatcher)
-                {
-                    Interval = TimeSpan.FromMilliseconds(LyricSingleClickDelayMs),
-                };
-                _lyricClickTimer.Tick -= OnLyricClickTimerTick;
-                _lyricClickTimer.Tick += OnLyricClickTimerTick;
-                _lyricClickTimer.Stop();   // 连点时重新计时 ✓
-                _lyricClickTimer.Start();
+                LyricClicked?.Invoke();
             }
         }
 
@@ -2023,11 +2012,6 @@ public sealed class BarView : FrameworkElement
         InvalidateVisual();
     }
 
-    private void OnLyricClickTimerTick(object? sender, EventArgs e)
-    {
-        _lyricClickTimer!.Stop();
-        LyricClicked?.Invoke();
-    }
 
     private void OnMouseUp(object sender, MouseButtonEventArgs e)
     {
