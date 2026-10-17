@@ -1329,7 +1329,7 @@ public partial class TaskbarBarWindow : Window
         {
             string key = option.Key;
             items.Add((
-                option.DisplayName + (option.IsPlaying ? "  ▶" : ""),
+                option.DisplayName,   // 用户："正在播放的媒体源后面不用加东西"✓
                 option.IsSelected,
                 () =>
                 {

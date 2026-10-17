@@ -33,6 +33,11 @@ public sealed class TrayIcon : IDisposable
     private const int MF_CHECKED = 0x8;
     private const int MF_GRAYED = 0x1;
     private const int MF_POPUP = 0x10;
+    private const int WM_NULL = 0x0000;
+
+    [System.Runtime.InteropServices.DllImport("user32.dll", SetLastError = true)]
+    private static extern bool PostMessage(IntPtr hWnd, int msg, IntPtr wParam, IntPtr lParam);
+
     private const int CMD_RECONNECT_SMTC = 1003;
     private const int CMD_RELOAD_BAR = 1004;
     private const int CMD_SOURCE_BASE = 2000;
@@ -223,6 +228,12 @@ public sealed class TrayIcon : IDisposable
         finally
         {
             _ = DestroyMenu(menu);
+
+            // ★ 关键：菜单关掉后必须给宿主投一个 WM_NULL ✗
+            //   TrackPopupMenu 会把前台交还给我们的窗口，但系统内部状态还停在"菜单模式"
+            //   ⇒ 下一次点击先被用来"退出菜单模式" ⇒ 用户看到"第一次点击没反应，第二次才有"✓
+            //   这是微软文档里 MSDN TrackPopupMenu 的固定做法 ✓
+            _ = PostMessage(_hwnd, WM_NULL, IntPtr.Zero, IntPtr.Zero);
         }
     }
 
