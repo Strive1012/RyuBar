@@ -1189,7 +1189,7 @@ public partial class TaskbarBarWindow : Window
         if (_servicePanel is { IsVisible: true })
         {
             Log.Write("input", "歌词单击 → 关闭二级面板");
-            _servicePanel.Hide();
+            _servicePanel.AnimatedHide();   // 带动画收起 ✓ 直接 Hide 会"啪"地消失 ✗
             return;
         }
 
