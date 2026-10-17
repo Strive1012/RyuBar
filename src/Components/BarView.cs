@@ -1661,11 +1661,12 @@ public sealed class BarView : FrameworkElement
         int positionMs = (int)_snapshot.PositionAt(DateTimeOffset.Now).TotalMilliseconds;
         double sungWidth = cached.SungWidth(positionMs);
 
-        // ★ 没有逐字时间轴（纯 LRC，如网易云）⇒ 用**整行进度**铺开已唱宽度 ✗
-        //   否则 Pieces 为空 ⇒ sungWidth 恒为 0 ⇒ 已唱部分完全不上色 ✓（用户实测 ✓）
-        if (!cached.HasPieces)
+        // ★ 没有逐字时间轴（纯 LRC，如网易云）⇒ **只有当前行**整行高亮 ✗
+        //   下一句（perWordAllowed=false）必须保持暗色 ✗ —— 它还没唱 ✓
+        //   （用户实测截图：两行都是亮的 ✓ 就是这条规则套到了下一句上 ✓）
+        if (!cached.HasPieces && perWordAllowed)
         {
-            // 整行高亮 ✓（当前行就是"正在唱的那行"✓ 不去猜每个字的时间 ✗）
+            // 当前行就是"正在唱的那行"⇒ 整行用高亮色 ✓ 不去猜每个字的时间 ✗
             sungWidth = cached.SungWidthForWholeLine();
         }
 
