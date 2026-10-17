@@ -449,6 +449,13 @@ public sealed class BarView : FrameworkElement
         "3.9v341.3c0 75-68 135.7-152 135.7S0 802.7 0 727.7C0 652.8 68 592 152 592h72c8.8 0 16-7.2 " +
         "16-16V159.6c0-31.7 23.2-58.6 54.5-63.3l576-86.4C909.2 4.1 944 34 944 73.2z");
 
+    /// <summary>
+    /// 文字区悬停的底色。
+    /// ★ 比按钮的 HoverBrush（0x20 ≈ 12%）更实 ✗ 实测 0x20 在条子背景上几乎看不出 ✗
+    ///   0x3A ≈ 23% 白：明显能看出"这里能点"✓ 又不至于像按钮那样抢眼 ✓
+    /// </summary>
+    private static readonly Brush TextHoverBrush = Freeze(new SolidColorBrush(Color.FromArgb(0x3A, 0xFF, 0xFF, 0xFF)));
+
     private Media.MediaSnapshot _snapshot = Media.MediaSnapshot.Empty;
     private BarHit _hover = BarHit.None;
     private BarHit _pressed = BarHit.None;
@@ -1184,6 +1191,16 @@ public sealed class BarView : FrameworkElement
                     : w - _padX;
         double textWidth = Math.Max(TextMinWidth, Math.Min(layout.TextWidth, rightLimit - _progressGap - x));
 
+        // ★ 文字区的悬停反馈（用户："鼠标放到歌词上没有反馈"✓）
+        //   这块现在**是可点的**（单击弹二级菜单 ✓ 双击激活播放源 ✓）却没有任何视觉提示 ✗
+        //   做法：一层和按钮一致的淡背景 ✓（HoverBrush = 0x20 白 ✓）
+        //   必须画在文字**之前** ✓ 否则会盖住字 ✗
+        if (_hover == BarHit.Text && textWidth > 1)
+        {
+            Rect textHover = new(x - 4, 3, textWidth + 8, h - 6);
+            dc.DrawRoundedRectangle(TextHoverBrush, null, textHover, 6, 6);
+        }
+
         // ★ 宽度动画帧**不要重设 MaxTextWidth** ✗（这是每帧 ~24ms 的元凶 ✓）
         //   原因：`FormattedText.MaxTextWidth` 的 setter 会让文本**重新整形**（重新决定换行与裁剪）✗
         //   而动画每一帧都要走这里 ⇒ 每帧重排一次文本 ⇒ 帧间隔 ~24ms（≈40fps）✗ 达不到 60fps ✗
@@ -1834,6 +1851,16 @@ public sealed class BarView : FrameworkElement
             _hover = hit;
             InvalidateVisual();
         }
+
+        // ★ 可点的区域给**手型光标** ✓（用户："鼠标放到歌词上没有反馈"✓）
+        //   光有背景高亮还不够 —— 光标形状是最直接的"这里能点"的信号 ✓
+        //   （同一个 Cursor 重复赋值 WPF 会自己短路 ✓ 不必自己判重 ✗）
+        Cursor = hit switch
+        {
+            BarHit.Text or BarHit.Artwork or BarHit.PlayPause or BarHit.Previous or BarHit.Next
+                => System.Windows.Input.Cursors.Hand,
+            _ => System.Windows.Input.Cursors.Arrow,   // 进度条另有拖动反馈 ✓
+        };
 
         // ★ 只有"真的有封面"才做放大/高亮/图标 ✓（没封面时放大会很怪 ✗）
         SetArtHoverTarget(hit == BarHit.Artwork && _snapshot.Artwork is not null ? 1.0 : 0.0);
