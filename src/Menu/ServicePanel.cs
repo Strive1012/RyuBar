@@ -44,17 +44,19 @@ public sealed class ServicePanel : Window
     private readonly TextBlock _title;
     private readonly TextBlock _artist;
     private readonly TextBlock _source;
-    private readonly ProgressBar _progress;
+    private readonly Slider _progress;
     private readonly TextBlock _position;
     private readonly TextBlock _duration;
     private readonly Button _previous;
     private readonly Button _playPause;
+    private readonly Path _playPauseGlyph;
     private readonly Button _next;
     private readonly Slider _volume;
     private readonly TextBlock _volumeText;
 
     private MediaSnapshot _snapshot = MediaSnapshot.Empty;
     private bool _dragging;
+    private DateTime _shownAt;
 
     /// <summary>用户在面板里拖动进度条（0..1 ✓）。</summary>
     public event Action<double>? SeekRequested;
@@ -129,19 +131,30 @@ public sealed class ServicePanel : Window
         body.Children.Add(header);
 
         // ② 进度条 + 时间
-        _progress = new ProgressBar
+        // ★ 用 Slider 而不是 ProgressBar ✗（用户："进度条应该有个原点，能更方便拖动，参考 AFM"✓）
+        //   ProgressBar 没有可抓的把手 ✓ Slider 自带 Thumb ✓ 再加上自定义样式做成细线 + 圆点 ✓
+        _progress = new Slider
         {
-            Height = 4,
             Minimum = 0,
             Maximum = 1,
-            Foreground = AccentBrush,
-            Background = TrackBrush,
-            BorderThickness = new Thickness(0),
+            SmallChange = 0.01,
+            LargeChange = 0.1,
+            IsMoveToPointEnabled = true,   // 点轨道直接跳 ✓（和条上的行为一致 ✓）
             Cursor = System.Windows.Input.Cursors.Hand,
+            Margin = new Thickness(0, 2, 0, 0),
         };
-        _progress.PreviewMouseLeftButtonDown += OnProgressDown;
-        _progress.PreviewMouseMove += OnProgressMove;
+        ApplyProgressStyle(_progress);
+        _progress.PreviewMouseLeftButtonDown += (_, _) => _dragging = true;
         _progress.PreviewMouseLeftButtonUp += OnProgressUp;
+        _progress.ValueChanged += (_, _) =>
+        {
+            // 拖动时实时更新时间显示 ✓ 松手才真正 seek ✓
+            if (_snapshot.Duration > TimeSpan.Zero)
+            {
+                _position.Text = BarView.Format(
+                    TimeSpan.FromSeconds(_snapshot.Duration.TotalSeconds * _progress.Value));
+            }
+        };
 
         Grid timeRow = new() { Margin = new Thickness(0, 6, 0, 14) };
         timeRow.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
@@ -165,7 +178,7 @@ public sealed class ServicePanel : Window
             Margin = new Thickness(0, 0, 0, 18),
         };
         _previous = MakeControlButton(Glyph.Previous, () => CommandInvoked?.Invoke(BarHit.Previous), "上一首");
-        _playPause = MakeControlButton(Glyph.Play, () => CommandInvoked?.Invoke(BarHit.PlayPause), "播放/暂停");
+        (_playPause, _playPauseGlyph) = MakeControlButtonWithGlyph(Glyph.Play, () => CommandInvoked?.Invoke(BarHit.PlayPause), "播放/暂停");
         _next = MakeControlButton(Glyph.Next, () => CommandInvoked?.Invoke(BarHit.Next), "下一首");
         controls.Children.Add(_previous);
         controls.Children.Add(_playPause);
@@ -216,8 +229,17 @@ public sealed class ServicePanel : Window
         shell.Child = body;
         Content = shell;
 
-        // 点面板外就关（Sh owActivated 默认 true ⇒ 会拿到 Deactivated ✓）
-        Deactivated += (_, _) => Hide();
+        // 点面板外就关 —— 但**刚显示的 400ms 内要忽略** ✗
+        //   条子是 WS_EX_NOACTIVATE 的窗口，而且鼠标刚点在它上面 ⇒ 面板 Activate() 可能拿不到前台
+        //   ⇒ Deactivated 立刻触发 ⇒ 面板闪一下就消失 ✗（实测：日志说"打开二级面板"但找不到窗口 ✓）
+        Deactivated += (_, _) =>
+        {
+            if ((DateTime.Now - _shownAt).TotalMilliseconds < 400)
+            {
+                return;
+            }
+            Hide();
+        };
         KeyDown += (_, e) =>
         {
             if (e.Key == System.Windows.Input.Key.Escape)
@@ -227,14 +249,28 @@ public sealed class ServicePanel : Window
         };
     }
 
-    /// <summary>把面板摆到条子正上方并显示（用户："在 bar 的上方"✓）。</summary>
-    public void ShowAbove(Rect barScreenRect, MediaSnapshot snapshot, double volume)
+    /// <summary>
+    /// 把面板摆到条子正上方并显示（用户："应该在 bar 的上方显示"✓）。
+    /// ★ `barScreenRect` 是**物理像素** ✗ 而 `Window.Left/Top` 是**DIP** ✗
+    ///   必须除以 scale 换算 ✓ 否则 150% 缩放下会跑到屏幕外（实测 Top=1650，屏幕才 1600 ✓）
+    /// </summary>
+    public void ShowAbove(Rect barScreenRectPx, double scale, MediaSnapshot snapshot, double volume)
     {
         Update(snapshot, volume);
-        Left = barScreenRect.Left + ((barScreenRect.Width - Width) / 2);
-        Top = barScreenRect.Top - Height - 8;
+
+        double s = scale <= 0 ? 1.0 : scale;
+        double barLeft = barScreenRectPx.Left / s;
+        double barWidth = barScreenRectPx.Width / s;
+        double barTop = barScreenRectPx.Top / s;
+
+        Left = barLeft + ((barWidth - Width) / 2);
+        Top = barTop - Height - 8;
+
+        // 夹在屏幕工作区内（工作区也是 DIP ✓ 同一量纲 ✓）
         Left = Math.Max(8, Math.Min(Left, SystemParameters.WorkArea.Right - Width - 8));
-        Top = Math.Max(8, Top);
+        Top = Math.Max(8, Math.Min(Top, SystemParameters.WorkArea.Bottom - Height - 8));
+
+        _shownAt = DateTime.Now;
         Show();
         Activate();
     }
@@ -257,7 +293,12 @@ public sealed class ServicePanel : Window
         }
         _duration.Text = snapshot.Duration > TimeSpan.Zero ? BarView.Format(snapshot.Duration) : "--:--";
 
-        _playPause.Tag = snapshot.IsPlaying ? Glyph.Pause : Glyph.Play;
+        // ★ 播放/暂停图标要跟着状态切换 ✗（用户："播放暂停按钮不会根据当前播放状态切换"✓）
+        //   原来写的是 `_playPause.Tag = ...` ✗ —— Tag 是自定义字段，界面上根本没人读它 ✓
+        //   必须改 Path.Data 才会真的换图标 ✓
+        //   （三元表达式不能直接调用 ✗ 先取到委托再调 ✓）
+        Func<Rect, Geometry> playPauseGlyph = snapshot.IsPlaying ? Glyph.Pause : Glyph.Play;
+        _playPauseGlyph.Data = playPauseGlyph(new Rect(0, 0, 16, 16));
         _previous.IsEnabled = snapshot.CanPrevious;
         _playPause.IsEnabled = snapshot.CanPlayPause;
         _next.IsEnabled = snapshot.CanNext;
@@ -271,46 +312,55 @@ public sealed class ServicePanel : Window
 
     // ---------------------------------------------------------------- 进度拖动
 
-    private void OnProgressDown(object sender, System.Windows.Input.MouseButtonEventArgs e)
-    {
-        _dragging = true;
-        _progress.CaptureMouse();
-        ApplyProgress(e);
-    }
-
-    private void OnProgressMove(object sender, System.Windows.Input.MouseEventArgs e)
-    {
-        if (_dragging)
-        {
-            ApplyProgress(e);
-        }
-    }
-
+    /// <summary>松手才真正 seek ✓ 拖动过程中只更新时间显示 ✓（Slider 自己处理位置 ✓）</summary>
     private void OnProgressUp(object sender, System.Windows.Input.MouseButtonEventArgs e)
     {
         if (!_dragging)
         {
             return;
         }
-        double ratio = ApplyProgress(e);
         _dragging = false;
-        _progress.ReleaseMouseCapture();
-        SeekRequested?.Invoke(ratio);
-    }
-
-    private double ApplyProgress(System.Windows.Input.MouseEventArgs e)
-    {
-        double width = _progress.ActualWidth;
-        double ratio = width <= 1 ? 0 : Math.Clamp(e.GetPosition(_progress).X / width, 0, 1);
-        _progress.Value = ratio;
-        if (_snapshot.Duration > TimeSpan.Zero)
-        {
-            _position.Text = BarView.Format(TimeSpan.FromSeconds(_snapshot.Duration.TotalSeconds * ratio));
-        }
-        return ratio;
+        SeekRequested?.Invoke(_progress.Value);
     }
 
     // ---------------------------------------------------------------- 小工具
+
+    /// <summary>
+    /// 把 Slider 改成"细线 + 圆点"的外观（用户要求："进度条应该有个原点，能更方便拖动"✓
+    /// 参考 AFM：轨道是一条细线，把手是一个圆形 ✓）。
+    /// ★ 必须整体重写模板 ✗ 默认 Slider 是浅灰系统样式，和面板完全不是一个观感 ✓
+    /// </summary>
+    private static void ApplyProgressStyle(Slider slider)
+    {
+        const string template =
+            "<ControlTemplate TargetType='Slider'" +
+            " xmlns='http://schemas.microsoft.com/winfx/2006/xaml/presentation'" +
+            " xmlns:x='http://schemas.microsoft.com/winfx/2006/xaml'>" +
+            "<Grid Background='Transparent'>" +
+            "<Border Height='4' CornerRadius='2' Background='#33FFFFFF' VerticalAlignment='Center'/>" +
+            "<Track x:Name='PART_Track'>" +
+            "<Track.DecreaseRepeatButton>" +
+            "<RepeatButton Command='Slider.DecreaseLarge' Focusable='False'>" +
+            "<RepeatButton.Template><ControlTemplate TargetType='RepeatButton'>" +
+            "<Border Height='4' CornerRadius='2' Background='#60A5FA' VerticalAlignment='Center'/>" +
+            "</ControlTemplate></RepeatButton.Template></RepeatButton>" +
+            "</Track.DecreaseRepeatButton>" +
+            "<Track.Thumb>" +
+            "<Thumb Width='14' Height='14'>" +
+            "<Thumb.Template><ControlTemplate TargetType='Thumb'>" +
+            "<Ellipse Fill='#60A5FA' Stroke='#FFFFFF' StrokeThickness='2'/>" +
+            "</ControlTemplate></Thumb.Template></Thumb>" +
+            "</Track.Thumb>" +
+            "<Track.IncreaseRepeatButton>" +
+            "<RepeatButton Command='Slider.IncreaseLarge' Focusable='False'>" +
+            "<RepeatButton.Template><ControlTemplate TargetType='RepeatButton'>" +
+            "<Border Background='Transparent'/>" +
+            "</ControlTemplate></RepeatButton.Template></RepeatButton>" +
+            "</Track.IncreaseRepeatButton>" +
+            "</Track></Grid></ControlTemplate>";
+
+        slider.Template = (ControlTemplate)System.Windows.Markup.XamlReader.Parse(template);
+    }
 
     private static TextBlock MakeText(double size, FontWeight weight, Brush brush) => new()
     {
@@ -319,6 +369,34 @@ public sealed class ServicePanel : Window
         Foreground = brush,
         TextTrimming = TextTrimming.CharacterEllipsis,
     };
+
+    /// <summary>控制键 + 返回内部 Path ✗（播放/暂停要能按状态换图标 ✓ 所以得留住引用 ✓）</summary>
+    private (Button Button, Path GlyphPath) MakeControlButtonWithGlyph(
+        Func<Rect, Geometry> glyph, Action onClick, string tip)
+    {
+        Path path = new()
+        {
+            Data = glyph(new Rect(0, 0, 16, 16)),
+            Fill = PrimaryText,
+            Stretch = Stretch.None,
+            HorizontalAlignment = HorizontalAlignment.Center,
+            VerticalAlignment = VerticalAlignment.Center,
+        };
+
+        Button button = new()
+        {
+            Width = 46,
+            Height = 40,
+            Margin = new Thickness(6, 0, 6, 0),
+            Background = Frozen(Color.FromArgb(0x1A, 0xFF, 0xFF, 0xFF)),
+            BorderThickness = new Thickness(0),
+            Cursor = System.Windows.Input.Cursors.Hand,
+            ToolTip = tip,
+            Content = path,
+        };
+        button.Click += (_, _) => onClick();
+        return (button, path);
+    }
 
     private Button MakeControlButton(Func<Rect, Geometry> glyph, Action onClick, string tip)
     {

@@ -1181,10 +1181,26 @@ public partial class TaskbarBarWindow : Window
         Log.Write("input", "歌词单击 → 打开二级面板");
 
         _servicePanel ??= CreateServicePanel();
-        _servicePanel.ShowAbove(
-            new Rect(_barRect.Left, _barRect.Top, _barRect.Width, _barRect.Height),
-            _media.Snapshot,
-            _appVolume);
+        _servicePanel.ShowAbove(BarScreenRect(), _scale, _media.Snapshot, _appVolume);
+    }
+
+    /// <summary>
+    /// 条子在**屏幕坐标系**里的矩形。
+    /// ★ `_barRect` 是**相对任务栏**的坐标 ✗（Place 里算的是子窗口在父窗口客户区内的位置 ✓）
+    ///   直接拿它当屏幕坐标用，面板就会跑到屏幕左上角去 ✓（用户实测"窗口位置错误"✓）
+    /// </summary>
+    private Rect BarScreenRect()
+    {
+        if (_taskbar == IntPtr.Zero || !NativeMethods.GetWindowRect(_taskbar, out Interop.RECT taskbar))
+        {
+            return new Rect(_barRect.Left, _barRect.Top, _barRect.Width, _barRect.Height);
+        }
+
+        return new Rect(
+            taskbar.Left + _barRect.Left,
+            taskbar.Top + _barRect.Top,
+            _barRect.Width,
+            _barRect.Height);
     }
 
     private Menu.ServicePanel CreateServicePanel()
