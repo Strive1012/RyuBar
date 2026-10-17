@@ -127,6 +127,7 @@ public sealed class SettingsWindowTheme : Window
         FontFamily = UiFont;
         FontSize = 13.5;
         ShowInTaskbar = true;
+        ShowActivated = true;   // 必须激活，否则第一次点击只用于激活窗口 ✓
 
         Content = BuildShell();
         SelectPage(_lastPage);
@@ -156,7 +157,25 @@ public sealed class SettingsWindowTheme : Window
             }
         };
 
+        // ★ "第一次点击没反应"：`Loaded` 时窗口往往还没真正激活（系统还在做显示动画/前台切换），
+        //   这时 Activate/SetForegroundWindow 会被前台锁拒绝 ⇒ 第一次点击只被用来激活窗口 ✓
+        //   `ContentRendered` 更晚、更可靠 ⇒ 在那里再抢一次 ✓
         // 诊断：把前几次点击的命中元素记下来（用于定位"第一次点击没反应"）
+        ContentRendered += (_, _) =>
+        {
+            try
+            {
+                Activate();
+                SetForegroundWindow(new WindowInteropHelper(this).Handle);
+                Focus();
+                Diagnostics.Log.Write("nav",
+                    $"ContentRendered 抢焦点: IsActive={IsActive} IsFocused={IsKeyboardFocused}");
+            }
+            catch (Exception ex)
+            {
+                Diagnostics.Log.Write("nav", "ContentRendered 抢焦点失败", ex);
+            }
+        };
         int probes = 0;
         PreviewMouseDown += (_, e) =>
         {
