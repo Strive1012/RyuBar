@@ -876,10 +876,12 @@ public sealed class BarView : FrameworkElement
                     {
                         need = Math.Max(need, MakeText(cur, _titleSize, TitleBrush, 4000, FontWeights.SemiBold).Width);
                     }
-                    if (!string.IsNullOrWhiteSpace(nxt))
-                    {
-                        need = Math.Max(need, MakeText(nxt, _artistSize, ArtistBrush, 4000, FontWeights.Normal).Width);
-                    }
+
+                    // ★ 不再让"下一句"参与宽度计算 ✗（用户："歌词很短但和其他部件有很大的空隙"✓）
+                    //   原来是 need = max(当前句, 下一句) ⇒ 当前句短、下一句长时，
+                    //   宽度被下一句撑开 ⇒ 短句居中后两边空出一大块 ✓
+                    //   现在只按**当前句**算：短句贴紧内容 ✓ 下一句长了就自己滚动/裁剪 ✓
+                    //   代价：条宽会随每句长度变化 —— 但这正是宽度缓动存在的意义（220ms 平滑过渡 ✓）
                     _lyricsNeedWidth = need;
                     _lyricsNeedKey = key;
                 }
