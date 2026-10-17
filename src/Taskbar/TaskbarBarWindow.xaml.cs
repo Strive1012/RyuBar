@@ -140,7 +140,25 @@ public partial class TaskbarBarWindow : Window
 
         _spectrum.CopyBands(_spectrumBuffer);
         Bar.SetSpectrumLevels(_spectrumBuffer, hasRealData: _spectrum.IsRunning);
+
+        // 诊断：每 2 秒记一次真实峰值（定位"频谱不动"是采集/分析还是渲染的问题 ✓）
+        long now = Environment.TickCount64;
+        if (now - _spectrumLogAt >= 2000)
+        {
+            _spectrumLogAt = now;
+            float peak = 0;
+            for (int i = 0; i < _spectrumBuffer.Length; i++)
+            {
+                if (_spectrumBuffer[i] > peak)
+                {
+                    peak = _spectrumBuffer[i];
+                }
+            }
+            Log.Write("spectrum", $"峰值 running={_spectrum.IsRunning} peak={peak:0.000} err={_spectrum.LastError}");
+        }
     }
+
+    private long _spectrumLogAt;
 
 
     // ---- 宽度缓动（歌词换句时条子平滑变宽/变窄，而不是瞬间跳）----
