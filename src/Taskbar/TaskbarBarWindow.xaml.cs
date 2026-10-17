@@ -159,6 +159,7 @@ public partial class TaskbarBarWindow : Window
     }
 
     private long _spectrumLogAt;
+    private long _speedLogAt;
 
 
     // ---- 宽度缓动（歌词换句时条子平滑变宽/变窄，而不是瞬间跳）----
@@ -1644,6 +1645,18 @@ public partial class TaskbarBarWindow : Window
             // 而这段判断原本每 150ms 才跑一次 → 换句滚动的头 150ms 只有 1~2 帧 ✓
             // 等表开起来滚动都快结束了 ✓✓ 实测"220ms 只画了 3 帧、最大间隔 114ms" ✓
             // 现在：换句那一刻就直接开表 ✓ 并且 tick 的条件也认"正在滚动" ✓ → 全程 60fps ✓
+            // 诊断：频谱不推送时，看这四个条件到底哪个为真（用户反馈"频谱不动"✓）
+            long tickNow = Environment.TickCount64;
+            if (tickNow - _speedLogAt >= 3000)
+            {
+                _speedLogAt = tickNow;
+                Log.Write("spectrum",
+                    $"条件 rolling={Bar.IsLyricsRolling} marquee={Bar.IsMarqueeActive} " +
+                    $"karaoke={Bar.IsKaraokeActive} spectrumActive={Bar.IsSpectrumActive} " +
+                    $"timerOn={_lyricsTimer?.IsEnabled} analyzer={_spectrum is not null} " +
+                    $"hasSession={snapshot.HasSession}");
+            }
+
             if (Bar.IsLyricsRolling || Bar.IsMarqueeActive || Bar.IsKaraokeActive || Bar.IsSpectrumActive)
             {
                 if (_lyricsTimer is { IsEnabled: false })

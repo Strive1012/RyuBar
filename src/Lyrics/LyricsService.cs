@@ -185,7 +185,10 @@ public sealed partial class LyricsService
             {
                 string otherLabel = netease ? "qq" : "netease";
                 Searchers otherSearcher = netease ? Searchers.QQMusic : Searchers.Netease;
-                LyricsRawTypes? otherType = otherLabel == "qq" ? LyricsRawTypes.Qrc : null;
+                // ★ 网易云返回的是**标准 LRC 文本** ✗ 显式告诉解析器 ✓
+                //   原来是 null ⇒ ParseHelper 走"自动判断" ⇒ 判断失败 ⇒ "解析后没有行"✓
+                //   （实测：原始长度=922，内容就是 `[00:17.43]和你并肩同行` 这种标准 LRC ✓）
+                LyricsRawTypes? otherType = otherLabel == "qq" ? LyricsRawTypes.Qrc : LyricsRawTypes.Lrc;
                 string rawKey = $"{otherLabel}|{title}|{artist}";
 
                 track = TryFromDisk(rawKey, title, artist, otherType, out string fallbackDiskNote);
