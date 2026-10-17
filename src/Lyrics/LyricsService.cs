@@ -833,6 +833,19 @@ public sealed partial class LyricsService
         if (data?.Lines is not { Count: > 0 })
         {
             note = "解析后没有行";
+
+            // ★ 诊断：把原始文本的头尾打出来 ✗
+            //   用户实测「爱，请问怎么走 / A-Lin」从网易云取到了歌词但解析不出行 ✓
+            //   只看"解析后没有行"无法判断是格式不认识（如纯逐字 JSON、KRC 变体），
+            //   还是内容本身是空的/占位 ✓ 打出来才能对症 ✓
+            int length = raw?.Length ?? 0;
+            string head = raw is null || raw.Length == 0
+                ? "(空)"
+                : raw[..Math.Min(160, raw.Length)].Replace("\r", "\\r").Replace("\n", "\\n");
+            string tail = raw is null || raw.Length <= 160
+                ? ""
+                : " …尾:" + raw[^Math.Min(60, raw.Length)..].Replace("\r", "\\r").Replace("\n", "\\n");
+            Diagnostics.Log.Write("lyrics", $"解析不出行 —— 原始长度={length} type={rawType} 头:{head}{tail}");
             return null;
         }
 
