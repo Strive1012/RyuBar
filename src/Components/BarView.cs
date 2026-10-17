@@ -1837,13 +1837,18 @@ public sealed class BarView : FrameworkElement
         {
             // ★ 没有封面：画**用户提供的双连音符** ✓（半透明 ✓ 矢量 ✓）
             //   用户："把本来该显示的图标替换为一个半透明的 png 音符图标"✓
-            //   这里用矢量而不是 png ✓ 150% DPI 下不会虚 ✓
-            //   原图 viewBox 是 1024×1024 ⇒ 按目标矩形的短边等比缩放并居中 ✓
-            const double designSize = 1024.0;
-            double side = Math.Min(drawn.Width, drawn.Height);
-            double scale = side / designSize;
-            double offsetX = drawn.X + ((drawn.Width - side) / 2);
-            double offsetY = drawn.Y + ((drawn.Height - side) / 2);
+            //         "我想让占位符和图片中的这个封面图一样大"✓
+            //   ⇒ 用 `NoteGlyph.Bounds` 取**实际内容边界**再撑满封面矩形 ✗
+            //     不能按 viewBox 的 1024×1024 缩 ✗ —— path 在 viewBox 里四周有留白 ⇒ 视觉上比封面小一圈 ✗
+            Rect bounds = NoteGlyph.Bounds;
+            if (bounds.Width <= 0 || bounds.Height <= 0)
+            {
+                return;
+            }
+
+            double scale = Math.Min(drawn.Width / bounds.Width, drawn.Height / bounds.Height);
+            double offsetX = drawn.X + ((drawn.Width - (bounds.Width * scale)) / 2) - (bounds.X * scale);
+            double offsetY = drawn.Y + ((drawn.Height - (bounds.Height * scale)) / 2) - (bounds.Y * scale);
 
             dc.PushTransform(new TranslateTransform(offsetX, offsetY));
             dc.PushTransform(new ScaleTransform(scale, scale));
