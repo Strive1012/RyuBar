@@ -1654,6 +1654,13 @@ public sealed class BarView : FrameworkElement
         int positionMs = (int)_snapshot.PositionAt(DateTimeOffset.Now).TotalMilliseconds;
         double sungWidth = cached.SungWidth(positionMs);
 
+        // ★ 没有逐字时间轴（纯 LRC，如网易云）⇒ 用**整行进度**铺开已唱宽度 ✗
+        //   否则 Pieces 为空 ⇒ sungWidth 恒为 0 ⇒ 已唱部分完全不上色 ✓（用户实测 ✓）
+        if (!cached.HasPieces)
+        {
+            sungWidth = cached.SungWidthByLineProgress(line.Progress);
+        }
+
         // 还在一行内逐字推进 → 需要 60fps 连续重画（滚到头/唱完就停）
         if (perWordAllowed && cached.HasPieces && sungWidth < cached.Width - 0.5)
         {
@@ -1685,8 +1692,10 @@ public sealed class BarView : FrameworkElement
             double originX = x + alignOffset - offset + (copy * gap);
             dc.PushTransform(new TranslateTransform(originX, rowTop));
             dc.DrawText(cached.Dim, new Point(0, 0));
-            if (sungWidth > 0 && cached.HasPieces)
+            if (sungWidth > 0)
             {
+                // ★ 去掉 `&& cached.HasPieces` ✗ —— 没有逐字数据时也要画已唱高亮 ✓
+                //   （上面已经把 sungWidth 换成"按整行进度"的值 ✓）
                 dc.PushClip(new RectangleGeometry(new Rect(0, -2, sungWidth, size * 1.9)));
                 dc.DrawText(cached.Bright, new Point(0, 0));
                 dc.Pop();
@@ -1729,6 +1738,21 @@ public sealed class BarView : FrameworkElement
                 last = pieceX + pieceWidth;
             }
             return last;
+        }
+
+        /// <summary>
+        /// 没有逐字时间轴时的已唱宽度（按宿主给的整行进度线性铺开 ✓）。
+        /// ★ 原来这里直接 return 0 ✗ —— 用户的歌从网易云取到的是**纯 LRC**（只有整行时间），
+        ///   Pieces 为空 ⇒ "已唱部分"整块不画 ⇒ 歌词永远是暗色、没有高亮 ✓
+        ///   （用户实测："已经唱过的部分歌词颜色没了"✓ QQ音乐给 QRC 有逐字，所以那时能看到 ✓）
+        /// </summary>
+        public double SungWidthByLineProgress(double lineProgress)
+        {
+            if (Width <= 0)
+            {
+                return 0;
+            }
+            return Width * Math.Clamp(lineProgress, 0, 1);
         }
     }
 
