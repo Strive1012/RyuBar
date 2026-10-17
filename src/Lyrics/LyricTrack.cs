@@ -19,7 +19,8 @@ public sealed record LyricTrack(
     string Title,
     string Artist,
     IReadOnlyList<LyricLine> Lines,
-    int OffsetMs = 0)
+    int OffsetMs = 0,
+    string Source = "")
 {
     public static readonly LyricTrack Empty = new("", "", Array.Empty<LyricLine>());
 

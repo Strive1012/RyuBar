@@ -29,6 +29,9 @@ public sealed partial class LyricsService
 
     private sealed record CacheEntry(LyricTrack? Track, long Bytes, LinkedListNode<string> Node);
 
+    /// <summary>最近一次成功解析出的歌词来自哪个库（空字符串表示未知或来自磁盘缓存回放）。</summary>
+    public string LastSource { get; private set; } = "";
+
     private string _inFlightKey = "";
 
     /// <summary>歌词变化（在后台线程触发，调用方自己切到 UI 线程）。</summary>
@@ -854,7 +857,15 @@ public sealed partial class LyricsService
 
         LyricTrack track = ToLyricTrack(data, title, artist);
         note = $"命中（{data.File?.SyncTypes}）行数 {track.Lines.Count}";
-        return track;
+
+        // 记录歌词来源：QRC = QQ音乐，LRC = 网易云，null = 未知（磁盘缓存回放）
+        string source = rawType switch
+        {
+            LyricsRawTypes.Qrc => "QQ音乐",
+            LyricsRawTypes.Lrc => "网易云",
+            _ => "",
+        };
+        return track with { Source = source };
     }
 
     /// <summary>匹配 QRC 逐字元组 `(起始,时长,0)` —— 清理正文里残留的坐标串。</summary>

@@ -499,7 +499,7 @@ public sealed class ServicePanel : Window
     }
 
     /// <summary>刷新内容（宿主每轮轮询调 ✓ 面板开着时保持同步 ✓）。</summary>
-    public void Update(MediaSnapshot snapshot, double volume)
+    public void Update(MediaSnapshot snapshot, double volume, string lyricsSource = "")
     {
         _snapshot = snapshot;
 
@@ -507,6 +507,9 @@ public sealed class ServicePanel : Window
         _title.Text = snapshot.DisplayTitle;
         _artist.Text = string.IsNullOrWhiteSpace(snapshot.Artist) ? "—" : snapshot.Artist;
         _source.Text = $"媒体源：{SourceNames.Friendly(snapshot.Source)}";
+        _lyricsSource.Text = string.IsNullOrEmpty(lyricsSource)
+            ? "歌词源：内置歌词库"
+            : $"歌词源：{lyricsSource}";
 
         DateTimeOffset now = DateTimeOffset.Now;
         if (!_dragging)

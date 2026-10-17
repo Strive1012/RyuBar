@@ -1111,7 +1111,7 @@ public partial class TaskbarBarWindow : Window
         // ★ 面板开着就同步刷新 ✗（用户报告：播放按钮不随状态变、进度不走 ✓ 根因就是这里没更新 ✓）
         if (_servicePanel is { IsVisible: true })
         {
-            _servicePanel.Update(snapshot, _appVolume);
+            _servicePanel.Update(snapshot, _appVolume, _media.Lyrics.Current.Source);
         }
 
         MaybeNotifyTrackChange(snapshot);
