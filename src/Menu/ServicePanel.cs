@@ -146,6 +146,10 @@ public sealed class ServicePanel : Window
         ApplyProgressStyle(_progress);
         _progress.PreviewMouseLeftButtonDown += (_, _) => _dragging = true;
         _progress.PreviewMouseLeftButtonUp += OnProgressUp;
+        // ★ 兜底复位 ✗（用户："拖动后也不会回到正常的位置"✓）
+        //   Slider 会捕获鼠标 ⇒ 某些情况下 PreviewMouseLeftButtonUp 收不到 ⇒ _dragging 卡在 true
+        //   ⇒ 之后 Update 里再也不刷新进度 ⇒ 进度条永远停在拖到的位置 ✓
+        _progress.LostMouseCapture += (_, _) => _dragging = false;
         _progress.ValueChanged += (_, _) =>
         {
             // 拖动时实时更新时间显示 ✓ 松手才真正 seek ✓
@@ -289,9 +293,16 @@ public sealed class ServicePanel : Window
         if (!_dragging)
         {
             _progress.Value = snapshot.ProgressAt(now);
+            // 拖动中途松开时 _dragging 可能残留 true（Slider 抢了鼠标事件）⇒ 这里兜底复位 ✓
             _position.Text = BarView.Format(snapshot.PositionAt(now));
         }
         _duration.Text = snapshot.Duration > TimeSpan.Zero ? BarView.Format(snapshot.Duration) : "--:--";
+
+        // ★ 播放器不支持跳转 ⇒ 进度条**禁用拖动** ✗（用户："qq音乐这种不能控制的软件应该不能拖动"✓）
+        //   微信/QQ音乐/网易云这类只上报 SMTC 事件的播放器 CanSeek=false ✓
+        //   允许拖动只会看到"拖了又弹回去"✗
+        _progress.IsEnabled = snapshot.CanSeek;
+        _progress.Opacity = snapshot.CanSeek ? 1.0 : 0.55;
 
         // ★ 播放/暂停图标要跟着状态切换 ✗（用户："播放暂停按钮不会根据当前播放状态切换"✓）
         //   原来写的是 `_playPause.Tag = ...` ✗ —— Tag 是自定义字段，界面上根本没人读它 ✓

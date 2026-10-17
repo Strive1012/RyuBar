@@ -1070,6 +1070,13 @@ public partial class TaskbarBarWindow : Window
         }
         Bar.Update(snapshot);
         _needsPlace = true;
+
+        // ★ 面板开着就同步刷新 ✗（用户报告：播放按钮不随状态变、进度不走 ✓ 根因就是这里没更新 ✓）
+        if (_servicePanel is { IsVisible: true })
+        {
+            _servicePanel.Update(snapshot, _appVolume);
+        }
+
         MaybeNotifyTrackChange(snapshot);
         TryFlushPendingNotification(snapshot);   // 封面到了就补发通知
     }
@@ -1178,8 +1185,15 @@ public partial class TaskbarBarWindow : Window
     /// </summary>
     private void OnLyricClicked()
     {
-        Log.Write("input", "歌词单击 → 打开二级面板");
+        // ★ 再点一次就关 ✗（用户："二级菜单的窗口打开后可以通过再次单击歌词关闭"✓）
+        if (_servicePanel is { IsVisible: true })
+        {
+            Log.Write("input", "歌词单击 → 关闭二级面板");
+            _servicePanel.Hide();
+            return;
+        }
 
+        Log.Write("input", "歌词单击 → 打开二级面板");
         _servicePanel ??= CreateServicePanel();
         _servicePanel.ShowAbove(BarScreenRect(), _scale, _media.Snapshot, _appVolume);
     }
