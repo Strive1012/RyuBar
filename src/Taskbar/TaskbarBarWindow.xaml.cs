@@ -1195,8 +1195,22 @@ public partial class TaskbarBarWindow : Window
 
         Log.Write("input", "歌词单击 → 打开二级面板");
         _servicePanel ??= CreateServicePanel();
+        // 设备列表在每次打开时刷新 ✓（用户可能中途插拔过耳机 ✓）
+        _servicePanel.SetDevices(_audioDevices.Enumerate());
         _servicePanel.ShowAbove(BarScreenRect(), _scale, _media.Snapshot, _appVolume);
     }
+
+    /// <summary>用户在面板里换了输出设备 ✓</summary>
+    private void OnPanelDeviceChanged(string deviceId)
+    {
+        bool ok = _audioDevices.SetDefault(deviceId);
+        Log.Write("input", $"切换输出设备 → {(ok ? "成功 ✓" : "失败 ✗")}  [{deviceId[..Math.Min(40, deviceId.Length)]}…]");
+
+        // 切换后设备的默认标记变了 ✓ 重新填一次下拉（否则选中项还停在旧的 ✓）
+        _servicePanel?.SetDevices(_audioDevices.Enumerate());
+    }
+
+    private readonly Audio.AudioDevices _audioDevices = new();
 
     /// <summary>
     /// 条子在**屏幕坐标系**里的矩形。
@@ -1224,6 +1238,7 @@ public partial class TaskbarBarWindow : Window
         panel.CommandInvoked += OnBarClicked;
         panel.VolumeChanged += OnPanelVolumeChanged;
         panel.MuteToggled += OnPanelMuteToggled;
+        panel.DeviceChanged += OnPanelDeviceChanged;
         return panel;
     }
 

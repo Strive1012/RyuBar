@@ -5,6 +5,7 @@ using System.Windows.Media;
 using System.Windows.Media.Imaging;
 using System.Windows.Shapes;
 using System.Windows.Threading;
+using RyuBar.Audio;
 using RyuBar.Components;
 using RyuBar.Media;
 
@@ -37,7 +38,7 @@ public sealed class ServicePanel : Window
     private static readonly Brush HoverBrush = Frozen(Color.FromArgb(0x1E, 0xFF, 0xFF, 0xFF));
 
     private const double PanelWidth = 520;
-    private const double PanelHeight = 420;
+    private const double PanelHeight = 470;   // 加了"输出设备"一行 ⇒ 从 420 提到 470 ✓
     private const double CornerRadius = 14;
 
     private readonly Image _artwork;
@@ -57,6 +58,27 @@ public sealed class ServicePanel : Window
     private readonly Button _next;
     private readonly Slider _volume;
     private readonly TextBlock _volumeText;
+    private readonly ComboBox _deviceCombo;
+    private bool _fillingDevices;
+
+    /// <summary>用户在下拉里选了别的输出设备（传设备 id ✓）。</summary>
+    public event Action<string>? DeviceChanged;
+
+    /// <summary>填充输出设备列表（宿主在打开面板和切换后调 ✓）。</summary>
+    public void SetDevices(IReadOnlyList<AudioDevice> devices)
+    {
+        _fillingDevices = true;
+        try
+        {
+            _deviceCombo.ItemsSource = null;
+            _deviceCombo.ItemsSource = devices;
+            _deviceCombo.SelectedItem = devices.FirstOrDefault(d => d.IsDefault);
+        }
+        finally
+        {
+            _fillingDevices = false;
+        }
+    }
 
     private MediaSnapshot _snapshot = MediaSnapshot.Empty;
     private bool _dragging;
@@ -214,6 +236,42 @@ public sealed class ServicePanel : Window
         controls.Children.Add(_playPause);
         controls.Children.Add(_next);
         body.Children.Add(controls);
+
+        // ③.5 输出设备（用户："增加输出设备功能，可以切换当前的输出设备"✓）
+        Grid deviceRow = new() { Margin = new Thickness(0, 0, 0, 14) };
+        deviceRow.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Auto) });
+        deviceRow.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+
+        TextBlock deviceLabel = MakeText(12.5, FontWeights.Normal, SecondaryText);
+        deviceLabel.Text = "输出设备";
+        deviceLabel.VerticalAlignment = VerticalAlignment.Center;
+        deviceLabel.Margin = new Thickness(0, 0, 12, 0);
+        Grid.SetColumn(deviceLabel, 0);
+        deviceRow.Children.Add(deviceLabel);
+
+        _deviceCombo = new ComboBox
+        {
+            Height = 30,
+            VerticalContentAlignment = VerticalAlignment.Center,
+            FontSize = 12.5,
+            Foreground = PrimaryText,
+            Background = Frozen(Color.FromArgb(0x22, 0xFF, 0xFF, 0xFF)),
+            BorderThickness = new Thickness(0),
+            Cursor = System.Windows.Input.Cursors.Hand,
+        };
+        // 只在**用户自己选**的时候才切设备 ✗
+        // 程序填充列表时会触发 SelectionChanged ✓ 那时不该去改系统设置 ✓
+        _deviceCombo.SelectionChanged += (_, _) =>
+        {
+            if (_fillingDevices || _deviceCombo.SelectedItem is not AudioDevice device || device.IsDefault)
+            {
+                return;
+            }
+            DeviceChanged?.Invoke(device.Id);
+        };
+        Grid.SetColumn(_deviceCombo, 1);
+        deviceRow.Children.Add(_deviceCombo);
+        body.Children.Add(deviceRow);
 
         // ④ 当前应用音量
         Grid volumeRow = new();
