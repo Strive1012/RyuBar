@@ -478,7 +478,7 @@ public partial class TaskbarBarWindow : Window
         {
             try
             {
-                _tray = new Interop.TrayIcon(_hwnd, "RyuBar — 右键打开设置");
+                _tray = new Interop.TrayIcon(_hwnd, "RyuBar");
                 Log.Write("tray", "托盘图标已添加");
             }
             catch (Exception ex)
