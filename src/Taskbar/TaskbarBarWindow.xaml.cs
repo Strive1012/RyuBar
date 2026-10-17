@@ -1173,13 +1173,46 @@ public partial class TaskbarBarWindow : Window
     }
 
     /// <summary>
-    /// 歌词区**单击** → 在条子**上方**调出二级菜单（用户要求 ✓ 进度条 + 单应用音量 ✓）。
-    /// 阶段 A 先做单击/双击的区分与双击激活 ✓ 菜单本体在阶段 B ✓
+    /// 歌词区**单击** → 在条子**上方**调出二级面板（用户要求 ✓ 进度条 + 单应用音量 ✓）。
+    /// ★ 面板必须是独立顶层窗口 ✗ 条子是 Shell_TrayWnd 的 WS_CHILD ⇒ 画不出任务栏之外 ✓
     /// </summary>
     private void OnLyricClicked()
     {
-        Log.Write("input", "歌词单击（二级菜单待阶段 B 实现）");
+        Log.Write("input", "歌词单击 → 打开二级面板");
+
+        _servicePanel ??= CreateServicePanel();
+        _servicePanel.ShowAbove(
+            new Rect(_barRect.Left, _barRect.Top, _barRect.Width, _barRect.Height),
+            _media.Snapshot,
+            _appVolume);
     }
+
+    private Menu.ServicePanel CreateServicePanel()
+    {
+        Menu.ServicePanel panel = new();
+        panel.SeekRequested += OnSeekRequested;
+        panel.CommandInvoked += OnBarClicked;
+        panel.VolumeChanged += OnPanelVolumeChanged;
+        panel.MuteToggled += OnPanelMuteToggled;
+        return panel;
+    }
+
+    /// <summary>面板里的音量滑块（0..1）—— 只调**当前播放源那个应用**的会话音量 ✓。</summary>
+    private void OnPanelVolumeChanged(double volume)
+    {
+        _appVolume = Math.Clamp(volume, 0, 1);
+        Log.Write("input", $"面板音量 → {Math.Round(_appVolume * 100)}%（单应用，待接入 WASAPI 会话）");
+    }
+
+    private void OnPanelMuteToggled(bool muted)
+    {
+        Log.Write("input", $"面板静音 → {muted}（待接入 WASAPI 会话）");
+    }
+
+    /// <summary>当前应用音量（0..1）。没有 WASAPI 会话支持时保持 1 ✓ 面板仍可拖动但不生效 ✓</summary>
+    private double _appVolume = 1.0;
+
+    private Menu.ServicePanel? _servicePanel;
 
     /// <summary>
     /// 歌词区**双击** → 快速打开**当前正在运行的**播放源应用（用户要求 ✓）。
